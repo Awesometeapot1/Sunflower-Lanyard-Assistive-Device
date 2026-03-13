@@ -6,7 +6,7 @@ CAL = {
     "RAW_X_RIGHT":  332,
     "RAW_X_LEFT": 1616,
     "RAW_Y_TOP":   284,
-    "RAW_Y_BOT":   1576,
+    "RAW_Y_BOT":   1575,
 
     # Screen size
     "H": 320,

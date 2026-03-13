@@ -1,29 +1,194 @@
+# main.py
+# ILI9486 + XPT2046 + Accessible UI + MIC badge
+# + NeoPixel breathing (GP10) synced to Grounding screen (non-blocking + HARD throttled writes)
+# + School Timetable screen (data in timetable.py)
+#
+# Wiring:
+#   NeoPixels: DIN -> GP10 (recommend 330Ω series resistor), 5V -> VBUS/5V (or external 5V), GND -> GND (shared)
+#   MIC: OUT -> GP26 (ADC0), VCC -> 3V3, GND -> GND
+#
+# Files you need on Pico:
+#   main.py
+#   mic_level.py   (the robust version)
+#   timetable.py   (TIMETABLE dict)
+#   ili9486.py, xpt2046.py, touch_cal.py, ui.py
+
 from machine import Pin, SPI
 import time
+import math
 
 from ili9486 import ILI9486
 from xpt2046 import XPT2046
 from touch_cal import CAL
 from ui import Button
 
-# ----------------------------
+from timetable import TIMETABLE
+
+# ============================================================
+# Debug options
+# ============================================================
+DEBUG_TOUCH_DOT = True
+
+# ============================================================
+# NeoPixel Breathing (HARD throttled writes)
+# ============================================================
+NEOPIXELS_ENABLED = True
+NEO_PIN = 10
+NEO_COUNT = 10
+
+class BreathingPixels:
+    """
+    Breathing cycle with HARD throttling so np.write() can't dominate the loop.
+    """
+    def __init__(
+        self,
+        pin=10,
+        n=10,
+        color=(0, 120, 255),
+        max_brightness=0.22,
+        inhale_s=4.0,
+        hold_s=1.0,
+        exhale_s=6.0,
+        rest_s=1.0,
+        rest_brightness=0.0,
+        gamma=2.2,
+        write_ms=60,          # max ~16fps
+        min_delta=2           # only write when RGB changes enough
+    ):
+        import neopixel
+        self.np = neopixel.NeoPixel(Pin(pin), n)
+        self.n = n
+
+        self.color = (int(color[0]), int(color[1]), int(color[2]))
+        self.max_brightness = float(max_brightness)
+
+        self.inhale_s = float(inhale_s)
+        self.hold_s = float(hold_s)
+        self.exhale_s = float(exhale_s)
+        self.rest_s = float(rest_s)
+        self.rest_brightness = float(rest_brightness)
+
+        self.gamma = float(gamma)
+        self.write_ms = int(write_ms)
+        self.min_delta = int(min_delta)
+
+        self.enabled = False
+        self._t0 = time.ticks_ms()
+        self._last_write = 0
+        self._last_sent = (0, 0, 0)
+
+    def set_color(self, rgb):
+        self.color = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+    def set_enabled(self, enabled: bool):
+        enabled = bool(enabled)
+        if enabled == self.enabled:
+            return
+        self.enabled = enabled
+        self._t0 = time.ticks_ms()
+        if not self.enabled:
+            self.off()
+
+    def off(self):
+        for i in range(self.n):
+            self.np[i] = (0, 0, 0)
+        self.np.write()
+        self._last_sent = (0, 0, 0)
+        self._last_write = time.ticks_ms()
+
+    def _apply_gamma(self, x):
+        if x <= 0.0:
+            return 0.0
+        if x >= 1.0:
+            return 1.0
+        return x ** self.gamma
+
+    def _maybe_write(self, rgb):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last_write) < self.write_ms:
+            return
+
+        lr, lg, lb = self._last_sent
+        r, g, b = rgb
+        if (abs(r - lr) < self.min_delta and
+            abs(g - lg) < self.min_delta and
+            abs(b - lb) < self.min_delta):
+            return
+
+        for i in range(self.n):
+            self.np[i] = rgb
+        self.np.write()
+
+        self._last_sent = rgb
+        self._last_write = now
+
+    def tick(self):
+        if not self.enabled:
+            return
+
+        inhale_ms = int(self.inhale_s * 1000)
+        hold_ms   = int(self.hold_s   * 1000)
+        exhale_ms = int(self.exhale_s * 1000)
+        rest_ms   = int(self.rest_s   * 1000)
+        total_ms = inhale_ms + hold_ms + exhale_ms + rest_ms
+        if total_ms <= 0:
+            return
+
+        now = time.ticks_ms()
+        dt = time.ticks_diff(now, self._t0) % total_ms
+
+        if dt < inhale_ms:
+            t = dt / inhale_ms if inhale_ms else 1.0
+            level = 0.5 - 0.5 * math.cos(math.pi * t)  # 0->1
+        elif dt < inhale_ms + hold_ms:
+            level = 1.0
+        elif dt < inhale_ms + hold_ms + exhale_ms:
+            t = (dt - inhale_ms - hold_ms) / exhale_ms if exhale_ms else 1.0
+            level = 0.5 + 0.5 * math.cos(math.pi * t)  # 1->0
+        else:
+            level = self.rest_brightness
+
+        lvl = self._apply_gamma(max(0.0, min(1.0, level))) * self.max_brightness
+        r, g, b = self.color
+        rgb = (int(r * lvl), int(g * lvl), int(b * lvl))
+        self._maybe_write(rgb)
+
+# Create breather
+breather = None
+try:
+    if NEOPIXELS_ENABLED:
+        breather = BreathingPixels(
+            pin=NEO_PIN,
+            n=NEO_COUNT,
+            color=(0, 120, 255),      # calm teal-blue
+            max_brightness=0.22,
+            inhale_s=4.0,
+            hold_s=1.0,
+            exhale_s=6.0,
+            rest_s=1.0,
+            rest_brightness=0.00,
+            write_ms=60,
+            min_delta=2
+        )
+except Exception as e:
+    print("NeoPixel init failed:", e)
+    breather = None
+
+# ============================================================
 # MIC (analog) quiet detector
-# ----------------------------
-# Put mic_level.py on your Pico filesystem.
-# Mic wiring: OUT -> GP26 (ADC0), VCC -> 3V3, GND -> GND
+# ============================================================
 MIC_ENABLED = True
 MIC_ADC_PIN = 26  # GP26 / ADC0
 
-# Tune these for your mic + lanyard placement
-MIC_SAMPLE_COUNT   = 180
-MIC_SAMPLE_US      = 200
+MIC_SAMPLE_COUNT   = 120
+MIC_SAMPLE_US      = 80
 MIC_EMA_ALPHA      = 0.15
-MIC_QUIET_THRESH   = 0.4   # raise if it never says quiet; lower if always quiet
+MIC_QUIET_THRESH   = 0.5
 MIC_HYSTERESIS     = 0.003
 MIC_QUIET_HOLD_MS  = 1500
 
-MIC_POLL_MS        = 220     # how often to refresh mic state
-MIC_DRAW_THROTTLE  = 250     # min ms between badge redraws
+MIC_POLL_MS        = 400
+MIC_DRAW_THROTTLE  = 250
 
 try:
     if MIC_ENABLED:
@@ -35,7 +200,9 @@ try:
             ema_alpha=MIC_EMA_ALPHA,
             quiet_threshold=MIC_QUIET_THRESH,
             hysteresis=MIC_HYSTERESIS,
-            quiet_hold_ms=MIC_QUIET_HOLD_MS
+            quiet_hold_ms=MIC_QUIET_HOLD_MS,
+            max_read_ms=12,
+            yield_every=25
         )
     else:
         mic = None
@@ -132,11 +299,11 @@ def debug_dot(x, y):
 # Accessible Theme system (Settings)
 # ============================================================
 THEMES = [
-    ("DARK (HC)",      0xFFFF, 0x0000,   0xFFFF,  0xFFFF, 0x0000,  0xE71C, 0x0000,  0x07E0),
-    ("LIGHT (HC)",       0x0000, 0xFFFF,   0x0000,  0x0000, 0xFFFF,  0x4208, 0xFFFF,  0xFFE0),
-    ("YELLOW (ACCESS)",   0x001F, 0xFFFF,   0xFFFF,  0xFFFF, 0x0000,  0xC618, 0x0000,  0x001F),
-    ("GREEN (ACCESS)", 0x780F, 0xFFFF,   0xFFFF,  0xFFFF, 0x0000,  0xC618, 0x0000,  0x780F),
-    ("AMBER (DARK)",    0x0000, 0xFFE0,   0x0000,  0x0000, 0xFFE0,  0x4208, 0xFFE0,  0xFFE0),
+    ("DARK (HC)",        0xFFFF, 0x0000, 0x0000, 0x0000, 0xFFFF, 0x39E7, 0xFFFF, 0x07E0),
+    ("LIGHT (HC)",       0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x4208, 0x0000, 0x001F),
+    ("YELLOW (ACCESS)",  0x001F, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xC618, 0x0000, 0x001F),
+    ("GREEN (ACCESS)",   0x780F, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xC618, 0x0000, 0x780F),
+    ("AMBER (DARK)",     0x0000, 0xFFE0, 0x0000, 0x0000, 0xFFE0, 0x4208, 0xFFE0, 0xFFE0),
 ]
 theme_index = 0
 
@@ -169,10 +336,6 @@ def draw_border(x, y, w, h, c):
     lcd.fill_rect(x+w-1, y, 1, h, c)
 
 def draw_mic_badge(force=False):
-    """
-    Draw a small badge on the title bar showing QUIET OK / LOUD.
-    Only draws if mic is present.
-    """
     global _last_badge_draw, _last_badge_state
     if mic is None:
         return
@@ -187,7 +350,6 @@ def draw_mic_badge(force=False):
         return
 
     t = th()
-    # Badge placement: right side of title bar
     bx = W - 132
     by = 10
     bw = 120
@@ -202,11 +364,9 @@ def draw_mic_badge(force=False):
         fg = WHITE
         label = "LOUD"
 
-    # Draw badge background + border
     lcd.fill_rect(bx, by, bw, bh, bg)
     draw_border(bx, by, bw, bh, t["box_border"])
 
-    # Centered text
     scale = 2
     tw = len(label) * 8 * scale
     tx = bx + (bw - tw) // 2
@@ -305,11 +465,22 @@ def draw_text_box(text, x, y, w, h, prefer_scale=2):
 # ============================================================
 SCREEN_MENU      = "menu"
 SCREEN_GROUND    = "grounding"
+SCREEN_TIMETABLE = "timetable"
 SCREEN_CONTACTS  = "contacts"
 SCREEN_SETTINGS  = "settings"
 SCREEN_COMM_MENU = "comm_menu"
 SCREEN_COMM_CARD = "comm_card"
 current_screen = SCREEN_MENU
+
+def set_breathing_active(active: bool):
+    if breather is None:
+        return
+    breather.set_enabled(bool(active))
+    if not active:
+        try:
+            breather.off()
+        except Exception:
+            pass
 
 # ============================================================
 # Shared bottom nav layout
@@ -320,12 +491,11 @@ NAV_X0 = 20
 NAV_GAP = 12
 NAV_W = (W - 40 - 2*NAV_GAP) // 3
 
-# Helper: draw top-right indicator without colliding with mic badge
 def draw_indicator(text):
     t = th()
     scale = 2
     tw = len(text) * 8 * scale
-    reserve = 140 if mic is not None else 0  # reserve space for mic badge on right
+    reserve = 140 if mic is not None else 0
     x = W - reserve - tw - 12
     lcd.text(text, x, 14, t["title_fg"], t["title_bg"], scale=scale)
 
@@ -383,6 +553,7 @@ def draw_grounding():
 def show_grounding():
     global current_screen
     current_screen = SCREEN_GROUND
+    set_breathing_active(True)
     draw_grounding()
 
 def grounding_prev():
@@ -401,16 +572,149 @@ btn_ground_prev.on_press = grounding_prev
 btn_ground_next.on_press = grounding_next
 
 # ============================================================
+# Timetable (data in timetable.py)
+# ============================================================
+TT_DAYS = ["MON", "TUE", "WED", "THU", "FRI"]
+tt_day_index = 0
+tt_page = 0
+TT_ITEMS_PER_PAGE = 3
+
+btn_tt_prev = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "PREV", lambda: None)
+btn_tt_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "MENU", lambda: None)
+btn_tt_next = Button(NAV_X0 + 2*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "NEXT", lambda: None)
+
+# placeholders so screen_buttons() never hits None
+btn_tt_mon = Button(0, 0, 1, 1, "M", lambda: None)
+btn_tt_tue = Button(0, 0, 1, 1, "T", lambda: None)
+btn_tt_wed = Button(0, 0, 1, 1, "W", lambda: None)
+btn_tt_thu = Button(0, 0, 1, 1, "T", lambda: None)
+btn_tt_fri = Button(0, 0, 1, 1, "F", lambda: None)
+
+def tt_current_day():
+    return TT_DAYS[tt_day_index]
+
+def tt_day_items(day):
+    return TIMETABLE.get(day, [])
+
+def tt_total_pages(day):
+    items = tt_day_items(day)
+    if not items:
+        return 1
+    return (len(items) + TT_ITEMS_PER_PAGE - 1) // TT_ITEMS_PER_PAGE
+
+def tt_set_day(idx):
+    global tt_day_index, tt_page
+    tt_day_index = idx
+    tt_page = 0
+    draw_timetable()
+
+def tt_prev():
+    global tt_page
+    if tt_page > 0:
+        tt_page -= 1
+        draw_timetable()
+
+def tt_next():
+    global tt_page
+    day = tt_current_day()
+    if tt_page < tt_total_pages(day) - 1:
+        tt_page += 1
+        draw_timetable()
+
+btn_tt_prev.on_press = tt_prev
+btn_tt_next.on_press = tt_next
+
+def draw_timetable():
+    global btn_tt_mon, btn_tt_tue, btn_tt_wed, btn_tt_thu, btn_tt_fri
+
+    t = th()
+    lcd.fill(t["screen_bg"])
+    draw_title_bar("TIMETABLE")
+    set_breathing_active(False)
+
+    # Day row buttons
+    days_y = 56
+    days_h = 44
+    x0 = 16
+    gap = 8
+    bw = (W - 2*x0 - 4*gap) // 5
+
+    def mk_day_btn(label, idx, x):
+        if idx == tt_day_index:
+            bg = th()["accent"]
+            fg = BLACK if bg != BLACK else WHITE
+        else:
+            bg = th()["btn_bg"]
+            fg = th()["btn_fg"]
+        return make_btn(x, days_y, bw, days_h, label, lambda: tt_set_day(idx), bg=bg, fg=fg)
+
+    btn_tt_mon = mk_day_btn("M", 0, x0 + 0*(bw+gap))
+    btn_tt_tue = mk_day_btn("T", 1, x0 + 1*(bw+gap))
+    btn_tt_wed = mk_day_btn("W", 2, x0 + 2*(bw+gap))
+    btn_tt_thu = mk_day_btn("T", 3, x0 + 3*(bw+gap))
+    btn_tt_fri = mk_day_btn("F", 4, x0 + 4*(bw+gap))
+
+    for b in [btn_tt_mon, btn_tt_tue, btn_tt_wed, btn_tt_thu, btn_tt_fri]:
+        draw_button(b)
+
+    day = tt_current_day()
+    items = tt_day_items(day)
+
+    box_x = 16
+    box_y = days_y + days_h + 10
+    box_w = W - 32
+    box_h = H - box_y - (NAV_H + 30)
+
+    pages = tt_total_pages(day)
+    indicator = f"{day}  {tt_page+1}/{pages}"
+    draw_indicator(indicator)
+
+    if not items:
+        draw_text_box("No lessons saved for this day yet.", box_x, box_y, box_w, box_h, prefer_scale=2)
+    else:
+        start = tt_page * TT_ITEMS_PER_PAGE
+        end = min(start + TT_ITEMS_PER_PAGE, len(items))
+        chunk = items[start:end]
+
+        lines = []
+        for p in chunk:
+            time_str = (p.get("time", "") or "").strip()
+            title = (p.get("title", "") or "").strip()
+            room = (p.get("room", "") or "").strip()
+            note = (p.get("note", "") or "").strip()
+
+            header = f"{time_str}  {title}".strip()
+            if room:
+                header += f"  ({room})"
+            lines.append(header)
+            if note:
+                lines.append(f"- {note}")
+            lines.append("")
+
+        text = "\n".join(lines).strip()
+        draw_text_box(text, box_x, box_y, box_w, box_h, prefer_scale=2)
+
+    draw_button(btn_tt_prev)
+    draw_button(btn_tt_menu)
+    draw_button(btn_tt_next)
+
+def show_timetable():
+    global current_screen
+    current_screen = SCREEN_TIMETABLE
+    set_breathing_active(False)
+    draw_timetable()
+
+# ============================================================
 # Contacts
 # ============================================================
 CONTACT_TEXT = (
     "CONTACT DETAILS\n\n"
-    "Name: \n"
-    "Pronouns: \n"
+    "Name: Izzy\n"
+    "Pronouns: She/Her\n"
     "Phone: \n\n"
     "Emergency Contact\n"
     "Name: \n"
-    "Relationship: \n"
+    "Relationship: Mother\n"
     "Phone: \n\n"
     "Medical Notes\n"
     "- Please be patient.\n"
@@ -425,6 +729,7 @@ def show_contacts():
     global current_screen
     t = th()
     current_screen = SCREEN_CONTACTS
+    set_breathing_active(False)
     lcd.fill(t["screen_bg"])
     draw_title_bar("CONTACTS")
 
@@ -451,6 +756,7 @@ def show_settings():
     global current_screen, settings_buttons
     t = th()
     current_screen = SCREEN_SETTINGS
+    set_breathing_active(False)
     lcd.fill(t["screen_bg"])
     draw_title_bar("SETTINGS")
 
@@ -589,6 +895,7 @@ def show_comm_menu():
     global current_screen
     t = th()
     current_screen = SCREEN_COMM_MENU
+    set_breathing_active(False)
     lcd.fill(t["screen_bg"])
     draw_title_bar("COMM CARDS")
     build_comm_menu_buttons()
@@ -666,6 +973,7 @@ def draw_comm_card():
 def show_comm_card():
     global current_screen
     current_screen = SCREEN_COMM_CARD
+    set_breathing_active(False)
     draw_comm_card()
 
 def comm_prev():
@@ -690,6 +998,7 @@ btn_comm_speak.on_press = lambda: speak(comm_cards[comm_card_index][1])
 # ============================================================
 MENU_ALL_ITEMS = [
     ("GROUNDING TECHNIQUES", show_grounding),
+    ("SCHOOL TIMETABLE",     show_timetable),
     ("COMMUNICATION CARDS",  show_comm_menu),
     ("CONTACT DETAILS",      show_contacts),
     ("SETTINGS",             show_settings),
@@ -752,6 +1061,7 @@ def draw_menu():
 def show_menu():
     global current_screen
     current_screen = SCREEN_MENU
+    set_breathing_active(False)
     draw_menu()
 
 def menu_prev():
@@ -773,13 +1083,35 @@ btn_menu_next.on_press = menu_next
 # Wire MENU buttons on screens
 # ============================================================
 btn_ground_menu.on_press    = show_menu
+btn_tt_menu.on_press        = show_menu
 btn_contacts_menu.on_press  = show_menu
 btn_settings_menu.on_press  = show_menu
 btn_commmenu_menu.on_press  = show_menu
 btn_comm_menu.on_press      = show_menu
 
 # ============================================================
-# Touch loop
+# Breather colour sync (only update when quiet state changes)
+# ============================================================
+_last_quiet_for_color = None
+
+def sync_breather_with_lanyard():
+    global _last_quiet_for_color
+    if breather is None:
+        return
+    if current_screen != SCREEN_GROUND:
+        return
+    if mic is None:
+        return
+
+    if _last_quiet_for_color is None or mic_quiet != _last_quiet_for_color:
+        _last_quiet_for_color = mic_quiet
+        if mic_quiet:
+            breather.set_color((0, 120, 255))   # teal
+        else:
+            breather.set_color((160, 0, 255))   # purple
+
+# ============================================================
+# Touch loop helpers + mic poll
 # ============================================================
 was_down = False
 last_tap_ms = 0
@@ -793,6 +1125,10 @@ def screen_buttons():
 
     if current_screen == SCREEN_GROUND:
         return [btn_ground_prev, btn_ground_menu, btn_ground_next]
+
+    if current_screen == SCREEN_TIMETABLE:
+        return [btn_tt_mon, btn_tt_tue, btn_tt_wed, btn_tt_thu, btn_tt_fri,
+                btn_tt_prev, btn_tt_menu, btn_tt_next]
 
     if current_screen == SCREEN_CONTACTS:
         return [btn_contacts_menu]
@@ -822,11 +1158,15 @@ def poll_mic_and_update_badge():
     mic_quiet = bool(info["quiet"])
     mic_rms = float(info["rms"])
 
-    # If badge state changed, redraw just the badge area
     draw_mic_badge(force=False)
 
-# start
+# ============================================================
+# Start
+# ============================================================
 show_menu()
+
+TOUCH_POLL_MS = 25
+_last_touch_poll = 0
 
 while True:
     now = time.ticks_ms()
@@ -834,28 +1174,39 @@ while True:
     # Mic update (throttled)
     poll_mic_and_update_badge()
 
-    t = tp.read(samples=9, delay_us=120) if tp.touched() else None
-    down = False
-    sx = sy = None
+    # NeoPixel breathing update (HARD throttled inside BreathingPixels)
+    sync_breather_with_lanyard()
+    if breather is not None and current_screen == SCREEN_GROUND:
+        breather.tick()
 
-    if t:
-        rx, ry, p = t
-        if p <= CAL.get("P_MAX", 1200):
-            sx, sy = raw_to_screen(rx, ry)
-            debug_dot(sx, sy)
-            down = True
+    # Touch read throttled
+    if time.ticks_diff(now, _last_touch_poll) >= TOUCH_POLL_MS:
+        _last_touch_poll = now
 
-    if down and not was_down:
-        if time.ticks_diff(now, last_tap_ms) > 160:
-            last_tap_ms = now
+        t = tp.read(samples=7, delay_us=90) if tp.touched() else None
+        down = False
+        sx = sy = None
 
-            for b in screen_buttons():
-                if b.contains(sx, sy):
-                    draw_button(b, pressed=True)
-                    time.sleep_ms(70)
-                    draw_button(b, pressed=False)
-                    b.on_press()
-                    break
+        if t:
+            rx, ry, p = t
+            if p <= CAL.get("P_MAX", 1200):
+                sx, sy = raw_to_screen(rx, ry)
+                if DEBUG_TOUCH_DOT:
+                    debug_dot(sx, sy)
+                down = True
 
-    was_down = down
-    time.sleep_ms(12)
+        if down and not was_down:
+            if time.ticks_diff(now, last_tap_ms) > 160:
+                last_tap_ms = now
+
+                for b in screen_buttons():
+                    if b.contains(sx, sy):
+                        draw_button(b, pressed=True)
+                        time.sleep_ms(70)
+                        draw_button(b, pressed=False)
+                        b.on_press()
+                        break
+
+        was_down = down
+
+    time.sleep_ms(8)
