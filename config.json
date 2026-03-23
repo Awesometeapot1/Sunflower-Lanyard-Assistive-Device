@@ -1,0 +1,81 @@
+{
+  "mic_quiet_thresh": 0.5,
+  "mic_hysteresis": 0.003,
+  "mic_quiet_hold_ms": 1500,
+  "contact": {
+    "name": "Izzy",
+    "pronouns": "She/Her",
+    "phone": "",
+    "emergency_name": "",
+    "emergency_relationship": "Mother",
+    "emergency_phone": "",
+    "medical_notes": [
+      "Please be patient.",
+      "Prefer text / yes-no questions.",
+      "Sensory overload: noise/crowds.",
+      "Needs space + quiet to regulate."
+    ]
+  },
+  "timetable": {
+    "MON": [{"time": "09:00-13:00", "title": "group project", "room": "2Q13A", "note": ""}],
+    "TUE": [{"time": "10:00-11:00", "title": "internet of things lecture", "room": "2B025", "note": ""}],
+    "WED": [{"time": "09:00-11:00", "title": "internet of things practical", "room": "2Q13A", "note": ""}],
+    "THU": [
+      {"time": "13:30-15:00", "title": "advanced algorithms practical", "room": "3Q085", "note": ""},
+      {"time": "15:00-16:30", "title": "advanced algorithms lecture", "room": "2D067", "note": ""}
+    ],
+    "FRI": [{"time": "10:00-13:00", "title": "digital design", "room": "0T135", "note": ""}]
+  },
+  "comm_cards": {
+    "FAVOURITES": [
+      {"icon": "!", "phrase": "I NEED HELP",       "bg": "RED",  "fg": "WHITE"},
+      {"icon": "!", "phrase": "PLEASE WAIT",        "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "!", "phrase": "I NEED SPACE",       "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "!", "phrase": "TOO LOUD",           "bg": "MAG",  "fg": "WHITE"},
+      {"icon": "!", "phrase": "TOO MANY PEOPLE",    "bg": "MAG",  "fg": "WHITE"},
+      {"icon": "!", "phrase": "I NEED TO GO HOME",  "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "~", "phrase": "WATER PLEASE",       "bg": "CYAN", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I NEED HEADPHONES",  "bg": "CYAN", "fg": "BLACK"}
+    ],
+    "NEEDS": [
+      {"icon": "!", "phrase": "I NEED HELP",           "bg": "RED",  "fg": "WHITE"},
+      {"icon": "~", "phrase": "PLEASE WAIT",           "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I NEED SPACE",          "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I NEED A BREAK",        "bg": "YELL", "fg": "BLACK"},
+      {"icon": "~", "phrase": "WATER PLEASE",          "bg": "CYAN", "fg": "BLACK"},
+      {"icon": "~", "phrase": "HUNGRY",                "bg": "GREEN","fg": "BLACK"},
+      {"icon": "~", "phrase": "TIRED",                 "bg": "GREY", "fg": "BLACK"},
+      {"icon": "!", "phrase": "I NEED TO GO HOME",     "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I NEED HEADPHONES",     "bg": "CYAN", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I'M HAVING A HARD DAY", "bg": "ORNG", "fg": "BLACK"}
+    ],
+    "SENSORY": [
+      {"icon": "!", "phrase": "TOO LOUD",               "bg": "MAG",  "fg": "WHITE"},
+      {"icon": "!", "phrase": "TOO MANY PEOPLE",        "bg": "MAG",  "fg": "WHITE"},
+      {"icon": "!", "phrase": "TOO BRIGHT",             "bg": "MAG",  "fg": "WHITE"},
+      {"icon": "~", "phrase": "I NEED QUIET",           "bg": "BLUE", "fg": "WHITE"},
+      {"icon": "~", "phrase": "I NEED DIM LIGHTS",      "bg": "BLUE", "fg": "WHITE"},
+      {"icon": "!", "phrase": "PLEASE DON'T TOUCH ME",  "bg": "RED",  "fg": "WHITE"},
+      {"icon": "~", "phrase": "I NEED LOWER BRIGHTNESS","bg": "BLUE", "fg": "WHITE"}
+    ],
+    "RESPONSES": [
+      {"icon": "?", "phrase": "YES",                    "bg": "GREEN","fg": "BLACK"},
+      {"icon": "?", "phrase": "NO",                     "bg": "RED",  "fg": "WHITE"},
+      {"icon": "~", "phrase": "MAYBE",                  "bg": "YELL", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I DON'T KNOW",           "bg": "GREY", "fg": "BLACK"},
+      {"icon": "~", "phrase": "PLEASE TEXT ME",         "bg": "CYAN", "fg": "BLACK"},
+      {"icon": "~", "phrase": "I CAN'T SPEAK RIGHT NOW","bg": "CYAN", "fg": "BLACK"}
+    ],
+    "FEELINGS": [
+      {"icon": "*", "phrase": "I FEEL OVERWHELMED", "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "*", "phrase": "I FEEL SICK",        "bg": "RED",  "fg": "WHITE"},
+      {"icon": "*", "phrase": "I FEEL ANXIOUS",     "bg": "ORNG", "fg": "BLACK"},
+      {"icon": "*", "phrase": "I AM OKAY",          "bg": "GREEN","fg": "BLACK"}
+    ],
+    "STATUS": [
+      {"icon": "G", "phrase": "I AM OKAY",       "bg": "GREEN","fg": "BLACK"},
+      {"icon": "A", "phrase": "I AM STRUGGLING", "bg": "YELL", "fg": "BLACK"},
+      {"icon": "R", "phrase": "I AM IN CRISIS",  "bg": "RED",  "fg": "WHITE"}
+    ]
+  }
+}

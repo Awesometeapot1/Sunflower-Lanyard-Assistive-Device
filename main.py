@@ -22,12 +22,17 @@ from xpt2046 import XPT2046
 from touch_cal import CAL
 from ui import Button
 
-from timetable import TIMETABLE
+from app_config import (
+    TIMETABLE,
+    FAV_CARDS, CAT_NEEDS, CAT_SENSORY, CAT_RESPONSES, CAT_FEELINGS, CAT_STATUS,
+    CONTACT_TEXT,
+    MIC_QUIET_THRESH, MIC_HYSTERESIS, MIC_QUIET_HOLD_MS,
+)
 
 # ============================================================
 # Debug options
 # ============================================================
-DEBUG_TOUCH_DOT = True
+DEBUG_TOUCH_DOT = False
 
 # ============================================================
 # NeoPixel Breathing (HARD throttled writes)
@@ -183,9 +188,7 @@ MIC_ADC_PIN = 26  # GP26 / ADC0
 MIC_SAMPLE_COUNT   = 120
 MIC_SAMPLE_US      = 80
 MIC_EMA_ALPHA      = 0.15
-MIC_QUIET_THRESH   = 0.5
-MIC_HYSTERESIS     = 0.003
-MIC_QUIET_HOLD_MS  = 1500
+# MIC_QUIET_THRESH, MIC_HYSTERESIS, MIC_QUIET_HOLD_MS loaded from app_config / config.json
 
 MIC_POLL_MS        = 400
 MIC_DRAW_THROTTLE  = 250
@@ -377,6 +380,8 @@ def draw_mic_badge(force=False):
     _last_badge_draw = now
 
 def draw_title_bar(title):
+    global _last_badge_state
+    _last_badge_state = None  # force fresh badge draw on every screen transition
     t = th()
     lcd.fill_rect(0, 0, W, 48, t["title_bg"])
     lcd.text(title, 12, 14, t["title_fg"], t["title_bg"], scale=2)
@@ -523,7 +528,21 @@ GROUNDING_PAGES = [
     "Notice pressure + texture.\n"
     "Relax jaw, drop shoulders.\n"
     "Unclench hands.\n"
-    "Slow exhale."
+    "Slow exhale.",
+
+    "Progressive Muscle Relax\n\n"
+    "Tense each group 5 sec,\n"
+    "then fully release.\n"
+    "Work up: feet, calves,\n"
+    "thighs, stomach, arms,\n"
+    "shoulders, face.",
+
+    "Safe Place\n\n"
+    "Close your eyes.\n"
+    "Picture somewhere safe\n"
+    "and calm. Notice the\n"
+    "colours, sounds, smells,\n"
+    "textures. Stay 1 minute."
 ]
 page_index = 0
 
@@ -648,11 +667,11 @@ def draw_timetable():
             fg = th()["btn_fg"]
         return make_btn(x, days_y, bw, days_h, label, lambda: tt_set_day(idx), bg=bg, fg=fg)
 
-    btn_tt_mon = mk_day_btn("M", 0, x0 + 0*(bw+gap))
-    btn_tt_tue = mk_day_btn("T", 1, x0 + 1*(bw+gap))
-    btn_tt_wed = mk_day_btn("W", 2, x0 + 2*(bw+gap))
-    btn_tt_thu = mk_day_btn("T", 3, x0 + 3*(bw+gap))
-    btn_tt_fri = mk_day_btn("F", 4, x0 + 4*(bw+gap))
+    btn_tt_mon = mk_day_btn("MON", 0, x0 + 0*(bw+gap))
+    btn_tt_tue = mk_day_btn("TUE", 1, x0 + 1*(bw+gap))
+    btn_tt_wed = mk_day_btn("WED", 2, x0 + 2*(bw+gap))
+    btn_tt_thu = mk_day_btn("THU", 3, x0 + 3*(bw+gap))
+    btn_tt_fri = mk_day_btn("FRI", 4, x0 + 4*(bw+gap))
 
     for b in [btn_tt_mon, btn_tt_tue, btn_tt_wed, btn_tt_thu, btn_tt_fri]:
         draw_button(b)
@@ -707,21 +726,7 @@ def show_timetable():
 # ============================================================
 # Contacts
 # ============================================================
-CONTACT_TEXT = (
-    "CONTACT DETAILS\n\n"
-    "Name: Izzy\n"
-    "Pronouns: She/Her\n"
-    "Phone: \n\n"
-    "Emergency Contact\n"
-    "Name: \n"
-    "Relationship: Mother\n"
-    "Phone: \n\n"
-    "Medical Notes\n"
-    "- Please be patient.\n"
-    "- Prefer text / yes-no questions.\n"
-    "- Sensory overload: noise/crowds.\n"
-    "- Needs space + quiet to regulate.\n"
-)
+# CONTACT_TEXT loaded from app_config / config.json
 
 btn_contacts_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "MENU", lambda: None)
 
@@ -799,52 +804,16 @@ def show_settings():
 def speak(text):
     print("SPEAK:", text)
 
-CAT_NEEDS = [
-    ("!", "I NEED HELP", RED, WHITE),
-    ("~", "PLEASE WAIT", ORNG, BLACK),
-    ("~", "I NEED SPACE", ORNG, BLACK),
-    ("~", "I NEED A BREAK", YELL, BLACK),
-    ("~", "WATER PLEASE", CYAN, BLACK),
-    ("~", "HUNGRY", GREEN, BLACK),
-    ("~", "TIRED", GREY, BLACK),
-    ("!", "I NEED TO GO HOME", ORNG, BLACK),
-]
-CAT_SENSORY = [
-    ("!", "TOO LOUD", MAG, WHITE),
-    ("!", "TOO MANY PEOPLE", MAG, WHITE),
-    ("!", "TOO BRIGHT", MAG, WHITE),
-    ("~", "I NEED QUIET", BLUE, WHITE),
-    ("~", "I NEED DIM LIGHTS", BLUE, WHITE),
-]
-CAT_RESPONSES = [
-    ("?", "YES", GREEN, BLACK),
-    ("?", "NO", RED, WHITE),
-    ("~", "MAYBE", YELL, BLACK),
-    ("~", "I DON'T KNOW", GREY, BLACK),
-    ("~", "PLEASE TEXT ME", CYAN, BLACK),
-    ("~", "I CAN'T SPEAK RIGHT NOW", CYAN, BLACK),
-]
-CAT_FEELINGS = [
-    ("*", "I FEEL OVERWHELMED", ORNG, BLACK),
-    ("*", "I FEEL SICK", RED, WHITE),
-    ("*", "I FEEL ANXIOUS", ORNG, BLACK),
-    ("*", "I AM OKAY", GREEN, BLACK),
-]
-FAV_CARDS = [
-    ("!", "PLEASE WAIT", ORNG, BLACK),
-    ("!", "I NEED SPACE", ORNG, BLACK),
-    ("!", "TOO LOUD", MAG, WHITE),
-    ("!", "TOO MANY PEOPLE", MAG, WHITE),
-    ("!", "I NEED TO GO HOME", ORNG, BLACK),
-    ("~", "WATER PLEASE", CYAN, BLACK),
-]
+# FAV_CARDS, CAT_NEEDS, CAT_SENSORY, CAT_RESPONSES, CAT_FEELINGS, CAT_STATUS
+# all loaded from app_config / config.json
 
 COMM_CATEGORIES = [
-    ("FAVOURITES", FAV_CARDS, YELL, BLACK),
-    ("NEEDS",      CAT_NEEDS, GREEN, BLACK),
-    ("SENSORY",    CAT_SENSORY, MAG, WHITE),
+    ("FAVOURITES", FAV_CARDS,    YELL,  BLACK),
+    ("NEEDS",      CAT_NEEDS,    GREEN, BLACK),
+    ("SENSORY",    CAT_SENSORY,  MAG,   WHITE),
     ("RESPONSES",  CAT_RESPONSES, CYAN, BLACK),
-    ("FEELINGS",   CAT_FEELINGS, ORNG, BLACK),
+    ("FEELINGS",   CAT_FEELINGS, ORNG,  BLACK),
+    ("STATUS",     CAT_STATUS,   GREY,  WHITE),
 ]
 
 comm_menu_buttons = []
@@ -994,20 +963,31 @@ btn_comm_cats.on_press = show_comm_menu
 btn_comm_speak.on_press = lambda: speak(comm_cards[comm_card_index][1])
 
 # ============================================================
+# SOS shortcut
+# ============================================================
+def do_sos():
+    global comm_cards, comm_cat_name, comm_card_index
+    comm_cat_name = "NEEDS"
+    comm_cards = CAT_NEEDS
+    comm_card_index = 0
+    show_comm_card()
+
+# ============================================================
 # MENU ITEMS
 # ============================================================
 MENU_ALL_ITEMS = [
-    ("GROUNDING TECHNIQUES", show_grounding),
-    ("SCHOOL TIMETABLE",     show_timetable),
-    ("COMMUNICATION CARDS",  show_comm_menu),
-    ("CONTACT DETAILS",      show_contacts),
-    ("SETTINGS",             show_settings),
+    ("!! I NEED HELP",       do_sos,         RED,  WHITE),
+    ("GROUNDING TECHNIQUES", show_grounding, None, None),
+    ("SCHOOL TIMETABLE",     show_timetable, None, None),
+    ("COMMUNICATION CARDS",  show_comm_menu, None, None),
+    ("CONTACT DETAILS",      show_contacts,  None, None),
+    ("SETTINGS",             show_settings,  None, None),
 ]
 
 # ============================================================
 # MENU (PAGED) - 2 items per page, AUTO LAYOUT, NO OVERLAP
 # ============================================================
-MENU_ITEMS_PER_PAGE = 2
+MENU_ITEMS_PER_PAGE = 3
 menu_page = 0
 menu_buttons = []
 
@@ -1027,7 +1007,7 @@ def build_menu_buttons():
 
     GAP = 14
     BTN_W = W - 2*X0
-    BTN_H = (AREA_H - GAP) // 2
+    BTN_H = (AREA_H - (MENU_ITEMS_PER_PAGE - 1) * GAP) // MENU_ITEMS_PER_PAGE
     if BTN_H < 40:
         BTN_H = 40
 
@@ -1037,8 +1017,12 @@ def build_menu_buttons():
     menu_buttons = []
     y = TOP
     for i in range(start, end):
-        label, fn = MENU_ALL_ITEMS[i]
-        menu_buttons.append(Button(X0, y, BTN_W, BTN_H, label, fn))
+        item = MENU_ALL_ITEMS[i]
+        label, fn = item[0], item[1]
+        ibg = item[2] if len(item) > 2 else None
+        ifg = item[3] if len(item) > 3 else None
+        b = make_btn(X0, y, BTN_W, BTN_H, label, fn, bg=ibg, fg=ifg)
+        menu_buttons.append(b)
         y += BTN_H + GAP
 
 def draw_menu():
