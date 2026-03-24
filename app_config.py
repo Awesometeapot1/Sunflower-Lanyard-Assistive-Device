@@ -39,7 +39,7 @@ def _build_contact_text(c):
 # Built-in defaults (mirrors original hardcoded values)
 # -----------------------------------------------------------
 _DEFAULTS = {
-    "mic_quiet_thresh": 0.5,
+    "mic_quiet_thresh": 0.015,
     "mic_hysteresis": 0.003,
     "mic_quiet_hold_ms": 1500,
     "contact": {
@@ -114,7 +114,8 @@ _DEFAULTS = {
             {"icon": "A", "phrase": "I AM STRUGGLING", "bg": "YELL", "fg": "BLACK"},
             {"icon": "R", "phrase": "I AM IN CRISIS",  "bg": "RED",  "fg": "WHITE"}
         ]
-    }
+    },
+    "battery_poll_ms": 3000,
 }
 
 # -----------------------------------------------------------
@@ -146,3 +147,10 @@ CAT_FEELINGS  = [_card(c) for c in _cc.get("FEELINGS",   [])]
 CAT_STATUS    = [_card(c) for c in _cc.get("STATUS",     [])]
 
 CONTACT_TEXT  = _build_contact_text(_cfg.get("contact", _DEFAULTS["contact"]))
+
+_nq = _cfg.get("neo_quiet_color",  [0, 120, 255])
+_na = _cfg.get("neo_active_color", [160, 0, 255])
+NEO_QUIET_COLOR  = (int(_nq[0]), int(_nq[1]), int(_nq[2]))
+NEO_ACTIVE_COLOR = (int(_na[0]), int(_na[1]), int(_na[2]))
+
+BATTERY_POLL_MS  = int(_cfg.get("battery_poll_ms", _DEFAULTS["battery_poll_ms"]))

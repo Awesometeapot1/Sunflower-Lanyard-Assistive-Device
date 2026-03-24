@@ -16,17 +16,20 @@
 from machine import Pin, SPI
 import time
 import math
+import json
 
 from ili9486 import ILI9486
 from xpt2046 import XPT2046
 from touch_cal import CAL
-from ui import Button
+from ui import Button, Battery
 
 from app_config import (
     TIMETABLE,
     FAV_CARDS, CAT_NEEDS, CAT_SENSORY, CAT_RESPONSES, CAT_FEELINGS, CAT_STATUS,
     CONTACT_TEXT,
     MIC_QUIET_THRESH, MIC_HYSTERESIS, MIC_QUIET_HOLD_MS,
+    NEO_QUIET_COLOR, NEO_ACTIVE_COLOR,
+    BATTERY_POLL_MS,
 )
 
 # ============================================================
@@ -207,8 +210,10 @@ try:
             max_read_ms=12,
             yield_every=25
         )
+        print("Mic initialized with threshold:", MIC_QUIET_THRESH)
     else:
         mic = None
+        print("Mic disabled")
 except Exception as e:
     print("Mic init failed:", e)
     mic = None
@@ -218,6 +223,25 @@ mic_rms = 0.0
 _last_mic_poll = 0
 _last_badge_draw = 0
 _last_badge_state = None
+
+# ============================================================
+# Battery (Pimoroni Pico LiPo)
+# ============================================================
+BATTERY_ENABLED = True
+
+try:
+    if BATTERY_ENABLED:
+        battery = Battery()
+    else:
+        battery = None
+except Exception as e:
+    print("Battery init failed:", e)
+    battery = None
+
+battery_percentage = 0
+battery_is_charging = False
+_last_battery_poll = 0
+_last_battery_draw = 0
 
 # ============================================================
 # Hardware + display config
@@ -302,12 +326,33 @@ def debug_dot(x, y):
 # Accessible Theme system (Settings)
 # ============================================================
 THEMES = [
-    ("DARK (HC)",        0xFFFF, 0x0000, 0x0000, 0x0000, 0xFFFF, 0x39E7, 0xFFFF, 0x07E0),
-    ("LIGHT (HC)",       0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x4208, 0x0000, 0x001F),
-    ("YELLOW (ACCESS)",  0x001F, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xC618, 0x0000, 0x001F),
-    ("GREEN (ACCESS)",   0x780F, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xC618, 0x0000, 0x780F),
-    ("AMBER (DARK)",     0x0000, 0xFFE0, 0x0000, 0x0000, 0xFFE0, 0x4208, 0xFFE0, 0xFFE0),
+    # name         title_bg  title_fg  screen_bg box_bg   box_bdr  btn_bg   btn_fg   accent
+
+    # High‑contrast modern dark
+    ("NEON_DARK",   0x0000,   0x07FF,   0x0000,   0x0000,  0x07FF,  0x07E0,  0x0000,  0xF81F),
+
+    # Soft, warm, paper‑like light mode
+    ("CREAM",       0xF79E,   0x0000,   0xFFFF,   0xFFFF,  0x0000,  0xF79E,  0x0000,  0x07E0),
+
+    # Cool, icy blue UI
+    ("GLACIER",     0x07FF,   0x0000,   0xCFFF,   0xCFFF,  0x001F,  0x07FF,  0x0000,  0x001F),
+
+    # Retro terminal green
+    ("TERMINAL",    0x0000,   0x07E0,   0x0000,   0x0000,  0x07E0,  0x0320,  0x07E0,  0x07E0),
+
+    # Sunset orange theme
+    ("SUNSET",      0xFC00,   0xFFFF,   0xFD20,   0xFD20,  0xF800,  0xFC00,  0xFFFF,  0xF81F),
+
+    # Steel grey industrial UI
+    ("STEEL",       0x4208,   0xFFFF,   0x8410,   0x8410,  0xFFFF,  0x4208,  0xFFFF,  0x07FF),
+
+    # Pastel lavender aesthetic
+    ("LAVENDER",    0xB81F,   0xFFFF,   0xE81F,   0xE81F,  0x780F,  0xB81F,  0xFFFF,  0x07FF),
+
+    # High‑contrast monochrome
+    ("MONO",        0xFFFF,   0x0000,   0x8410,   0x8410,  0xFFFF,  0x0000,  0xFFFF,  0xFFFF),
 ]
+
 theme_index = 0
 
 def th():
@@ -353,9 +398,10 @@ def draw_mic_badge(force=False):
         return
 
     t = th()
-    bx = W - 132
+    # Position on left side of title bar, after title text
+    bx = 160
     by = 10
-    bw = 120
+    bw = 90
     bh = 28
 
     if state:
@@ -370,14 +416,50 @@ def draw_mic_badge(force=False):
     lcd.fill_rect(bx, by, bw, bh, bg)
     draw_border(bx, by, bw, bh, t["box_border"])
 
-    scale = 2
+    scale = 1
     tw = len(label) * 8 * scale
     tx = bx + (bw - tw) // 2
-    ty = by + (bh - 16) // 2
+    ty = by + (bh - 8) // 2
     lcd.text(label, tx, ty, fg, bg, scale=scale)
 
     _last_badge_state = state
     _last_badge_draw = now
+
+def draw_battery_icon(x, y, size, percentage, color):
+    """Draw a simple 5-segment battery icon."""
+    segment_h = size // 5
+    segment_w = size // 3
+    filled = (percentage // 20)  # 0-5 segments
+    
+    for i in range(5):
+        seg_y = y + i * segment_h
+        if i < filled:
+            lcd.fill_rect(x, seg_y, segment_w, segment_h - 1, color)
+        else:
+            draw_border(x, seg_y, segment_w, segment_h - 1, color)
+
+def draw_battery_display(force=False):
+    """Draw battery percentage in top-right corner - simple, clean."""
+    global _last_battery_draw, battery_percentage, battery_is_charging
+    if battery is None:
+        return
+    
+    now = time.ticks_ms()
+    if (not force) and time.ticks_diff(now, _last_battery_draw) < 500:
+        return
+    _last_battery_draw = now
+    
+    t = th()
+    color = battery.get_battery_color()
+    percent_text = "{}%".format(battery_percentage)
+    
+    # Draw at top-right, padded from edge
+    scale = 1
+    tw = len(percent_text) * 8 * scale
+    tx = W - tw - 12
+    ty = 14
+    
+    lcd.text(percent_text, tx, ty, color, t["title_bg"], scale=scale)
 
 def draw_title_bar(title):
     global _last_badge_state
@@ -385,7 +467,12 @@ def draw_title_bar(title):
     t = th()
     lcd.fill_rect(0, 0, W, 48, t["title_bg"])
     lcd.text(title, 12, 14, t["title_fg"], t["title_bg"], scale=2)
+    
+    # Draw mic badge on left side (after title)
     draw_mic_badge(force=True)
+    
+    # Draw battery on right side
+    draw_battery_display(force=True)
 
 def wrap_text(s, max_chars):
     words = s.split(" ")
@@ -468,14 +555,14 @@ def draw_text_box(text, x, y, w, h, prefer_scale=2):
 # ============================================================
 # Screens
 # ============================================================
-SCREEN_MENU      = "menu"
+SCREEN_DASHBOARD = "dashboard"
 SCREEN_GROUND    = "grounding"
 SCREEN_TIMETABLE = "timetable"
 SCREEN_CONTACTS  = "contacts"
 SCREEN_SETTINGS  = "settings"
 SCREEN_COMM_MENU = "comm_menu"
 SCREEN_COMM_CARD = "comm_card"
-current_screen = SCREEN_MENU
+current_screen = SCREEN_DASHBOARD
 
 def set_breathing_active(active: bool):
     if breather is None:
@@ -747,54 +834,157 @@ def show_contacts():
     draw_button(btn_contacts_menu)
 
 # ============================================================
-# Settings (theme picker)
+# Settings (themes + sensor & neo tabs)
 # ============================================================
-settings_buttons = []
+settings_buttons  = []
+settings_page     = 0        # 0 = THEMES  1 = SENSOR & NEO
+mic_thresh_live   = MIC_QUIET_THRESH
+neo_quiet_color   = NEO_QUIET_COLOR
+neo_active_color  = NEO_ACTIVE_COLOR
+neo_preset_index  = -1       # -1 = custom
+
+# NeoPixel presets: (label, RGB565-swatch, quiet-RGB, active-RGB)
+NEO_PRESETS = [
+    ("OCEAN",  0x041F, (  0, 100, 255), (100,   0, 255)),
+    ("FOREST", 0x07C0, (  0, 200,  60), (200, 100,   0)),
+    ("SUNSET", 0xFD20, (255, 100,   0), (255,   0,  80)),
+    ("GALAXY", 0x780F, (100,   0, 200), (  0, 200, 200)),
+    ("ROSE",   0xF813, (255,   0, 120), (100,   0, 200)),
+    ("ARCTIC", 0x07FF, (  0, 220, 200), (  0, 100, 255)),
+    ("FIRE",   0xF800, (255,  30,   0), (255, 180,   0)),
+    ("CALM",   0xC618, (160, 160, 160), (  0, 100, 255)),
+]
+
 btn_settings_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "MENU", lambda: None)
+btn_settings_tab0 = Button(20,  60, 210, 30, "THEMES",       lambda: None)
+btn_settings_tab1 = Button(250, 60, 210, 30, "SENSOR & NEO", lambda: None)
+
+def save_config_partial(**kwargs):
+    try:
+        with open("config.json") as f:
+            cfg = json.load(f)
+        for k, v in kwargs.items():
+            cfg[k] = v
+        with open("config.json", "w") as f:
+            json.dump(cfg, f)
+    except Exception as e:
+        print("config save:", e)
 
 def apply_theme(idx):
     global theme_index
     theme_index = idx
     show_settings()
 
+def set_settings_page(page):
+    global settings_page
+    settings_page = page
+    show_settings()
+
+def apply_neo_preset(idx):
+    global neo_quiet_color, neo_active_color, neo_preset_index, _last_quiet_for_color
+    neo_preset_index = idx
+    _, _, qc, ac = NEO_PRESETS[idx]
+    neo_quiet_color  = qc
+    neo_active_color = ac
+    _last_quiet_for_color = None   # force sync_breather to update colour immediately
+    save_config_partial(neo_quiet_color=list(qc), neo_active_color=list(ac))
+    show_settings()
+
+def adjust_mic_thresh(delta):
+    global mic_thresh_live
+    # Useful RMS range on Pico ADC mic: ~0.002 – 0.08
+    mic_thresh_live = round(max(0.002, min(0.08, mic_thresh_live + delta)), 3)
+    if mic is not None:
+        mic.quiet_threshold = mic_thresh_live
+    save_config_partial(mic_quiet_thresh=mic_thresh_live)
+    _redraw_sensor_content()
+
+def _redraw_sensor_content():
+    global settings_buttons
+    t = th()
+    lcd.fill_rect(0, 96, W, H - 96 - (NAV_H + 22), t["screen_bg"])
+    settings_buttons = [btn_settings_tab0, btn_settings_tab1]
+
+    # NeoPixel colour row
+    lcd.text("NEOPIXEL COLOUR", 22, 98, t["box_border"], t["screen_bg"], scale=2)
+    nb_y, nb_h, nb_gap = 120, 34, 4
+    nb_w = (W - 44 - (len(NEO_PRESETS) - 1) * nb_gap) // len(NEO_PRESETS)
+    for i, (_, col565, qc, ac) in enumerate(NEO_PRESETS):
+        bx = 22 + i * (nb_w + nb_gap)
+        lcd.fill_rect(bx, nb_y, nb_w, nb_h, col565)
+        if i == neo_preset_index:
+            draw_border(bx,   nb_y,   nb_w,   nb_h,   WHITE)
+            draw_border(bx+1, nb_y+1, nb_w-2, nb_h-2, WHITE)
+        else:
+            draw_border(bx, nb_y, nb_w, nb_h, t["box_border"])
+        def _neo_fn(idx=i):
+            return lambda: apply_neo_preset(idx)
+        settings_buttons.append(Button(bx, nb_y, nb_w, nb_h, "", _neo_fn()))
+
+    # Mic sensitivity row
+    lcd.text("MIC SENSITIVITY", 22, 163, t["box_border"], t["screen_bg"], scale=2)
+    mt_y, mt_h = 183, 32
+    btn_m = make_btn(22,  mt_y, 58, mt_h, "-", lambda: adjust_mic_thresh(-0.002))
+    btn_p = make_btn(400, mt_y, 58, mt_h, "+", lambda: adjust_mic_thresh(+0.002))
+    settings_buttons += [btn_m, btn_p]
+    draw_button(btn_m)
+    draw_button(btn_p)
+    
+    # Show current threshold
+    thresh_text = "Threshold: {:.3f}".format(mic_thresh_live)
+    lcd.text(thresh_text, 88, 170, t["box_border"], t["screen_bg"], scale=1)
+    
+    # Show current RMS reading
+    rms_text = "Current RMS: {:.3f}".format(mic_rms)
+    lcd.text(rms_text, 88, 185, GREEN if mic_quiet else RED, t["screen_bg"], scale=1)
+    
+    # Status indicator
+    status_text = "QUIET" if mic_quiet else "LOUD"
+    status_color = GREEN if mic_quiet else RED
+    lcd.text(status_text, 88, 200, status_color, t["screen_bg"], scale=1)
+
 def show_settings():
-    global current_screen, settings_buttons
+    global current_screen, settings_buttons, btn_settings_tab0, btn_settings_tab1
     t = th()
     current_screen = SCREEN_SETTINGS
     set_breathing_active(False)
     lcd.fill(t["screen_bg"])
     draw_title_bar("SETTINGS")
 
-    settings_buttons = []
-    grid_x = 20
-    grid_y = 70
-    grid_w = W - 40
-    grid_h = H - 70 - (NAV_H + 30)
+    t0_bg = t["accent"] if settings_page == 0 else t["btn_bg"]
+    t0_fg = BLACK       if settings_page == 0 else t["btn_fg"]
+    t1_bg = t["accent"] if settings_page == 1 else t["btn_bg"]
+    t1_fg = BLACK       if settings_page == 1 else t["btn_fg"]
+    btn_settings_tab0 = make_btn(20,  60, 210, 30, "THEMES",       lambda: set_settings_page(0), bg=t0_bg, fg=t0_fg)
+    btn_settings_tab1 = make_btn(250, 60, 210, 30, "SENSOR & NEO", lambda: set_settings_page(1), bg=t1_bg, fg=t1_fg)
+    draw_button(btn_settings_tab0)
+    draw_button(btn_settings_tab1)
+    settings_buttons = [btn_settings_tab0, btn_settings_tab1]
 
-    cols = 2
-    rows = (len(THEMES) + 1) // 2
-    gapx = 12
-    gapy = 12
-    bw = (grid_w - gapx) // 2
-    bh = (grid_h - (rows-1)*gapy) // rows
-
-    for i, theme_row in enumerate(THEMES):
-        name = theme_row[0]
-        title_bg = theme_row[1]
-        title_fg = theme_row[2]
-        c = i % cols
-        r = i // cols
-        x = grid_x + c * (bw + gapx)
-        y = grid_y + r * (bh + gapy)
-
-        def make_apply(idx=i):
-            def _go():
-                apply_theme(idx)
-            return _go
-
-        b = make_btn(x, y, bw, bh, name, make_apply(), bg=title_bg, fg=title_fg)
-        settings_buttons.append(b)
-        draw_button(b)
+    if settings_page == 0:
+        # 3-column theme grid
+        gx, gy = 20, 98
+        gw, gh = W - 40, H - 98 - (NAV_H + 30)
+        cols = 3
+        rows = (len(THEMES) + cols - 1) // cols
+        gapx, gapy = 8, 8
+        bw = (gw - (cols - 1) * gapx) // cols
+        bh = (gh - (rows - 1) * gapy) // rows
+        for i, theme_row in enumerate(THEMES):
+            tbg, tfg = theme_row[1], theme_row[2]
+            c, r = i % cols, i // cols
+            x = gx + c * (bw + gapx)
+            y = gy + r * (bh + gapy)
+            def _theme_fn(idx=i):
+                return lambda: apply_theme(idx)
+            b = make_btn(x, y, bw, bh, theme_row[0], _theme_fn(), bg=tbg, fg=tfg)
+            draw_button(b)
+            if i == theme_index:
+                draw_border(x,   y,   bw,   bh,   t["accent"])
+                draw_border(x+1, y+1, bw-2, bh-2, t["accent"])
+            settings_buttons.append(b)
+    else:
+        _redraw_sensor_content()
 
     draw_button(btn_settings_menu)
 
@@ -973,105 +1163,161 @@ def do_sos():
     show_comm_card()
 
 # ============================================================
-# MENU ITEMS
+# Menu icons — drawn inside the left square of each button
+# Each function receives (bx, by, bh, fg, bg)
 # ============================================================
-MENU_ALL_ITEMS = [
-    ("!! I NEED HELP",       do_sos,         RED,  WHITE),
-    ("GROUNDING TECHNIQUES", show_grounding, None, None),
-    ("SCHOOL TIMETABLE",     show_timetable, None, None),
-    ("COMMUNICATION CARDS",  show_comm_menu, None, None),
-    ("CONTACT DETAILS",      show_contacts,  None, None),
-    ("SETTINGS",             show_settings,  None, None),
+def _icon_sos(bx, by, bh, fg, bg):
+    cx = bx + bh // 2
+    lcd.fill_rect(cx-4, by+4,     8, bh-18, fg)  # bar
+    lcd.fill_rect(cx-4, by+bh-10, 8, 7,     fg)  # dot
+
+def _icon_ground(bx, by, bh, fg, bg):
+    cx = bx + bh // 2
+    for i in range(6):                            # leaf top half (widens)
+        w = 2 + i * 2
+        lcd.fill_rect(cx - w//2, by+4+i*2, w, 2, fg)
+    for i in range(5, -1, -1):                    # leaf bottom half (narrows)
+        w = 2 + i * 2
+        lcd.fill_rect(cx - w//2, by+16+(5-i)*2, w, 2, fg)
+    lcd.fill_rect(cx-2, by+27, 4, bh-31, fg)      # stem
+
+def _icon_time(bx, by, bh, fg, bg):
+    x0, y0, sz = bx+4, by+4, bh-8
+    draw_border(x0, y0, sz, sz, fg)
+    lcd.fill_rect(x0+1, y0+sz//3,     sz-2, 1, fg)  # row dividers
+    lcd.fill_rect(x0+1, y0+2*sz//3,   sz-2, 1, fg)
+    lcd.fill_rect(x0+sz//2, y0+1, 1, sz-2, fg)       # column divider
+
+def _icon_comm(bx, by, bh, fg, bg):
+    x0, y0, w, h = bx+3, by+3, bh-6, bh-13
+    lcd.fill_rect(x0, y0, w, h, fg)               # bubble fill
+    lcd.fill_rect(x0+2, y0+2, w-4, h-4, bg)       # hollow centre
+    lcd.fill_rect(x0+5, y0+h, 8, 5, fg)            # tail
+
+def _icon_contact(bx, by, bh, fg, bg):
+    cx = bx + bh // 2
+    lcd.fill_rect(cx-5, by+3, 10, 10, fg)          # head
+    lcd.fill_rect(cx-8, by+15, 16, bh-19, fg)      # body
+
+def _icon_settings(bx, by, bh, fg, bg):
+    cx, cy, r = bx+bh//2, by+bh//2, 5
+    lcd.fill_rect(cx-r, cy-r, r*2, r*2, fg)        # centre
+    lcd.fill_rect(cx-3, cy-r-4, 6, 4, fg)           # top tooth
+    lcd.fill_rect(cx-3, cy+r,   6, 4, fg)            # bottom tooth
+    lcd.fill_rect(cx-r-4, cy-3, 4, 6, fg)            # left tooth
+    lcd.fill_rect(cx+r,   cy-3, 4, 6, fg)             # right tooth
+
+# ============================================================
+# Dashboard (2x3 Grid) - replaces old MENU
+# ============================================================
+# Dashboard items: (label, fn, bg, fg, icon_fn)
+DASHBOARD_ITEMS = [
+    ("GROUNDING",    show_grounding, None, None,  _icon_ground),
+    ("TIMETABLE",    show_timetable, None, None,  _icon_time),
+    ("COMM CARDS",   show_comm_menu, None, None,  _icon_comm),
+    ("CONTACTS",     show_contacts,  None, None,  _icon_contact),
+    ("SETTINGS",     show_settings,  None, None,  _icon_settings),
+    ("ABOUT",        lambda: show_about(), None, None,  _icon_sos),
 ]
 
-# ============================================================
-# MENU (PAGED) - 2 items per page, AUTO LAYOUT, NO OVERLAP
-# ============================================================
-MENU_ITEMS_PER_PAGE = 3
-menu_page = 0
-menu_buttons = []
+dashboard_buttons = []
 
-btn_menu_prev = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "PREV", lambda: None)
-btn_menu_next = Button(NAV_X0 + 2*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "NEXT", lambda: None)
+def show_about():
+    """Show about screen with device info."""
+    global current_screen
+    t = th()
+    current_screen = SCREEN_CONTACTS  # Reuse contacts layout temporarily
+    set_breathing_active(False)
+    lcd.fill(t["screen_bg"])
+    draw_title_bar("ABOUT")
+    
+    about_text = (
+        "Accessible Device v1.0\n\n"
+        "ILI9486 Display\n"
+        "XPT2046 Touchscreen\n"
+        "Pimoroni Pico LiPo\n\n"
+        "Battery: {}%\n"
+        "Charging: {}".format(
+            battery_percentage,
+            "Yes" if battery_is_charging else "No"
+        )
+    )
+    
+    box_x = 16
+    box_y = 60
+    box_w = W - 32
+    box_h = H - 60 - (NAV_H + 30)
+    
+    draw_text_box(about_text, box_x, box_y, box_w, box_h, prefer_scale=2)
+    
+    btn_about_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "HOME", show_dashboard)
+    draw_button(btn_about_menu)
 
-def menu_total_pages():
-    return (len(MENU_ALL_ITEMS) + MENU_ITEMS_PER_PAGE - 1) // MENU_ITEMS_PER_PAGE
-
-def build_menu_buttons():
-    global menu_buttons
-
-    X0 = 20
-    TOP = 60
-    BOTTOM = NAV_Y - 10
-    AREA_H = BOTTOM - TOP
-
-    GAP = 14
-    BTN_W = W - 2*X0
-    BTN_H = (AREA_H - (MENU_ITEMS_PER_PAGE - 1) * GAP) // MENU_ITEMS_PER_PAGE
-    if BTN_H < 40:
-        BTN_H = 40
-
-    start = menu_page * MENU_ITEMS_PER_PAGE
-    end = min(start + MENU_ITEMS_PER_PAGE, len(MENU_ALL_ITEMS))
-
-    menu_buttons = []
-    y = TOP
-    for i in range(start, end):
-        item = MENU_ALL_ITEMS[i]
-        label, fn = item[0], item[1]
-        ibg = item[2] if len(item) > 2 else None
-        ifg = item[3] if len(item) > 3 else None
-        b = make_btn(X0, y, BTN_W, BTN_H, label, fn, bg=ibg, fg=ifg)
-        menu_buttons.append(b)
-        y += BTN_H + GAP
-
-def draw_menu():
+def draw_dashboard():
+    """Draw 2x3 grid dashboard - text-only buttons, clean layout."""
     t = th()
     lcd.fill(t["screen_bg"])
-    draw_title_bar("MENU")
+    
+    # Title + battery at top
+    lcd.fill_rect(0, 0, W, 48, t["title_bg"])
+    lcd.text("DASHBOARD", 12, 14, t["title_fg"], t["title_bg"], scale=2)
+    draw_battery_display(force=True)
+    
+    # Grid layout: 2 rows x 3 columns
+    grid_start_y = 60
+    grid_h = H - grid_start_y - 20
+    
+    cols = 3
+    rows = 2
+    
+    gap_x = 14
+    gap_y = 14
+    
+    btn_w = (W - 2*16 - (cols-1)*gap_x) // cols
+    btn_h = (grid_h - (rows-1)*gap_y) // rows
+    
+    dashboard_buttons.clear()
+    
+    for i, (label, fn, bg, fg, icon_fn) in enumerate(DASHBOARD_ITEMS):
+        col = i % cols
+        row = i // cols
+        
+        x = 16 + col * (btn_w + gap_x)
+        y = grid_start_y + row * (btn_h + gap_y)
+        
+        b = make_btn(x, y, btn_w, btn_h, label, fn, bg=bg, fg=fg)
+        dashboard_buttons.append(b)
+        
+        # Draw button with text centered (no icons)
+        bg_color = getattr(b, "bg", t["btn_bg"])
+        fg_color = getattr(b, "fg", t["btn_fg"])
+        
+        lcd.fill_rect(b.x, b.y, btn_w, btn_h, bg_color)
+        draw_border(b.x, b.y, btn_w, btn_h, t["box_border"])
+        
+        # Draw text centered
+        scale = 2
+        text_w = len(label) * 8 * scale
+        text_h = 16
+        tx = b.x + (btn_w - text_w) // 2
+        ty = b.y + (btn_h - text_h) // 2
+        lcd.text(label, tx, ty, fg_color, bg_color, scale=scale)
 
-    build_menu_buttons()
-    for b in menu_buttons:
-        draw_button(b)
-
-    pages = menu_total_pages()
-    indicator = f"{menu_page+1}/{pages}"
-    draw_indicator(indicator)
-
-    if pages > 1:
-        draw_button(btn_menu_prev)
-        draw_button(btn_menu_next)
-
-def show_menu():
+def show_dashboard():
     global current_screen
-    current_screen = SCREEN_MENU
+    current_screen = SCREEN_DASHBOARD
     set_breathing_active(False)
-    draw_menu()
-
-def menu_prev():
-    global menu_page
-    if menu_page > 0:
-        menu_page -= 1
-        draw_menu()
-
-def menu_next():
-    global menu_page
-    if menu_page < menu_total_pages() - 1:
-        menu_page += 1
-        draw_menu()
-
-btn_menu_prev.on_press = menu_prev
-btn_menu_next.on_press = menu_next
+    draw_dashboard()
 
 # ============================================================
-# Wire MENU buttons on screens
+# Wire return-to-home buttons on screens
 # ============================================================
-btn_ground_menu.on_press    = show_menu
-btn_tt_menu.on_press        = show_menu
-btn_contacts_menu.on_press  = show_menu
-btn_settings_menu.on_press  = show_menu
-btn_commmenu_menu.on_press  = show_menu
-btn_comm_menu.on_press      = show_menu
+btn_ground_menu.on_press    = show_dashboard
+btn_tt_menu.on_press        = show_dashboard
+btn_contacts_menu.on_press  = show_dashboard
+btn_settings_menu.on_press  = show_dashboard
+btn_commmenu_menu.on_press  = show_dashboard
+btn_comm_menu.on_press      = show_dashboard
 
 # ============================================================
 # Breather colour sync (only update when quiet state changes)
@@ -1090,9 +1336,9 @@ def sync_breather_with_lanyard():
     if _last_quiet_for_color is None or mic_quiet != _last_quiet_for_color:
         _last_quiet_for_color = mic_quiet
         if mic_quiet:
-            breather.set_color((0, 120, 255))   # teal
+            breather.set_color(neo_quiet_color)
         else:
-            breather.set_color((160, 0, 255))   # purple
+            breather.set_color(neo_active_color)
 
 # ============================================================
 # Touch loop helpers + mic poll
@@ -1101,11 +1347,8 @@ was_down = False
 last_tap_ms = 0
 
 def screen_buttons():
-    if current_screen == SCREEN_MENU:
-        btns = list(menu_buttons)
-        if menu_total_pages() > 1:
-            btns += [btn_menu_prev, btn_menu_next]
-        return btns
+    if current_screen == SCREEN_DASHBOARD:
+        return dashboard_buttons
 
     if current_screen == SCREEN_GROUND:
         return [btn_ground_prev, btn_ground_menu, btn_ground_next]
@@ -1143,11 +1386,32 @@ def poll_mic_and_update_badge():
     mic_rms = float(info["rms"])
 
     draw_mic_badge(force=False)
+    
+    # Update settings display if on sensor tab
+    if current_screen == SCREEN_SETTINGS and settings_page == 1:
+        _redraw_sensor_content()
+
+def poll_battery_and_update():
+    """Poll battery voltage and calculate percentage."""
+    global battery_percentage, battery_is_charging, _last_battery_poll
+    if battery is None:
+        return
+    
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _last_battery_poll) < BATTERY_POLL_MS:
+        return
+    _last_battery_poll = now
+    
+    info = battery.update()
+    battery_percentage = info["percentage"]
+    battery_is_charging = info["is_charging"]
+    
+    draw_battery_display(force=False)
 
 # ============================================================
 # Start
 # ============================================================
-show_menu()
+show_dashboard()
 
 TOUCH_POLL_MS = 25
 _last_touch_poll = 0
@@ -1157,6 +1421,9 @@ while True:
 
     # Mic update (throttled)
     poll_mic_and_update_badge()
+
+    # Battery update (throttled)
+    poll_battery_and_update()
 
     # NeoPixel breathing update (HARD throttled inside BreathingPixels)
     sync_breather_with_lanyard()

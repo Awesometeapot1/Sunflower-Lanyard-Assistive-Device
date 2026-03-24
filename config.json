@@ -1,5 +1,5 @@
 {
-  "mic_quiet_thresh": 0.5,
+  "mic_quiet_thresh": 0.015,
   "mic_hysteresis": 0.003,
   "mic_quiet_hold_ms": 1500,
   "contact": {
