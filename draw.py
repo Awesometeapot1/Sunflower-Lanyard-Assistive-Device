@@ -5,11 +5,12 @@
 import time
 from ui import Button
 import hw
+from app_config import THEME_INDEX as _initial_theme
 
 # ---------------------------------------------------------------------------
 # Shared state — written by main.py poll functions, read by draw helpers
 # ---------------------------------------------------------------------------
-theme_index      = 0
+theme_index      = _initial_theme
 mic_quiet        = False
 mic_rms          = 0.0
 battery_percentage   = 0
@@ -22,110 +23,106 @@ _last_battery_draw = 0
 # ---------------------------------------------------------------------------
 # Theme definitions
 # ---------------------------------------------------------------------------
-# Tuple layout: (name, title_bg, title_fg, screen_bg, box_bg, box_border, btn_bg, btn_fg, accent)
+# Tuple layout: (name, bg, text, btn, btn_text, accent1, accent2, border, highlight)
+# All RGB565 colour values are pre-swapped (R↔B) because this panel's BGR
+# subpixel order is fixed regardless of the MADCTL BGR bit.
 THEMES = [
     # High-contrast modern dark
-    ("NEON_DARK",  
+    ("NEON_DARK",
         0x0000,  # bg
-        0x07FF,  # text
-        0x0000,  # btn
-        0x07FF,  # btn_text
+        0xFFE0,  # text
+        0x1082,  # btn
+        0xFFE0,  # btn_text
         0x07E0,  # accent1
         0xF81F,  # accent2
-        0x07FF,  # border
-        0xF81F   # highlight
+        0xFFE0,  # border
+        0xF81F,  # highlight
     ),
-
-    # Warm light — soft peach buttons
+    # Warm light — soft peach
     ("CREAM",
-        0xFFDD,  # bg
-        0x0000,  # text
-        0xFEA0,  # btn
-        0x0000,  # btn_text
-        0xF695,  # accent1
-        0x8410,  # accent2
-        0x0000,  # border
-        0xFEC0   # highlight
+        0xD79F,  # bg        R=255 G=242 B=210  warm ivory
+        0x2104,  # text      near-black
+        0xBEFD,  # btn       R=239 G=222 B=189  warm beige
+        0x2104,  # btn_text
+        0x7D18,  # accent1   R=197 G=162 B=123  warm tan
+        0x4BB3,  # accent2   R=156 G=117 B=74   warm brown
+        0x2104,  # border
+        0x9E3F,  # highlight R=255 G=198 B=156  warm peach
     ),
-
-    # Cool icy blue
+    # Cool mint teal
     ("GLACIER",
-        0xCFFF,  # bg
-        0x001F,  # text
-        0xAFFF,  # btn
-        0x001F,  # btn_text
-        0x07FF,  # accent1
-        0x0010,  # accent2
-        0x07FF,  # border
-        0xDFFF   # highlight
+        0xF7D8,  # bg        R=197 G=251 B=247  very light mint
+        0x49E3,  # text      R=25  G=61  B=74   dark teal
+        0x49E3,  # btn       dark teal
+        0xD6F1,  # btn_text  R=140 G=222 B=214  light cyan
+        0xC6A0,  # accent1   R=0   G=214 B=197  bright teal
+        0x9D20,  # accent2   R=0   G=166 B=156  medium teal
+        0xC6A0,  # border    bright teal
+        0xE780,  # highlight R=0   G=243 B=230  vivid cyan
     ),
-
-    # Gentle dark — deep navy, soft blue text, good for night/low light
+    # Dark navy — night mode
     ("NIGHT",
-        0x0842,  # bg
-        0x7BDE,  # text
-        0x10A2,  # btn
-        0x5B5F,  # btn_text
-        0x3230,  # accent1
-        0x4A7F,  # accent2
-        0x7BDE,  # border
-        0x1CF7   # highlight
+        0x1021,  # bg
+        0xD6D6,  # text
+        0x2883,  # btn
+        0x9491,  # btn_text
+        0x6289,  # accent1
+        0xFA69,  # accent2
+        0xD6D6,  # border
+        0xBCE3,  # highlight
     ),
-
-    # Warm orange and magenta
+    # Warm orange sunset
     ("SUNSET",
-        0xFC00,  # bg
-        0xFFFF,  # text
-        0xFD20,  # btn
-        0x0000,  # btn_text
-        0xF81F,  # accent1
-        0xFE4A,  # accent2
-        0x0000,  # border
-        0xF81F   # highlight
+        0x133C,  # bg        R=230 G=100 B=15   warm amber-orange
+        0xFFFF,  # text      white
+        0x0A57,  # btn       R=189 G=73  B=8    dark amber
+        0xFFFF,  # btn_text  white
+        0x175F,  # accent1   R=255 G=235 B=16   bright yellow
+        0x041F,  # accent2   R=255 G=130 B=0    orange
+        0xFFFF,  # border    white
+        0x061F,  # highlight R=255 G=194 B=0    deep gold
     ),
-
     # Steel grey
     ("STEEL",
-        0x4208,  # bg
+        0x528A,  # bg
         0xFFFF,  # text
-        0x8410,  # btn
+        0x8C51,  # btn
         0xFFFF,  # btn_text
-        0xC618,  # accent1
-        0x4208,  # accent2
+        0xCE59,  # accent1
+        0x528A,  # accent2
         0xFFFF,  # border
-        0x7BEF   # highlight
+        0x7BCF,  # highlight
     ),
-
-    # Soft purple — calming pastel
+    # Soft purple pastel
     ("LAVENDER",
-        0xD69F,  # bg
-        0x0000,  # text
-        0xE77F,  # btn
-        0x0000,  # btn_text
-        0xC65F,  # accent1
-        0xAD55,  # accent2
-        0x0000,  # border
-        0xEF9F   # highlight
+        0xF51A,  # bg        R=214 G=162 B=247  light lavender
+        0x2104,  # text      near-black
+        0xE538,  # btn       R=197 G=166 B=230  medium lavender
+        0x2104,  # btn_text
+        0xD476,  # accent1   R=181 G=142 B=214  muted lavender
+        0xB331,  # accent2   R=140 G=101 B=181  deeper purple
+        0x2104,  # border
+        0xFE3C,  # highlight R=230 G=198 B=255  bright violet
     ),
-
-    # High-contrast black and white
+    # High-contrast B&W
     ("MONO",
         0x0000,  # bg
         0xFFFF,  # text
-        0x0000,  # btn
+        0x3186,  # btn
         0xFFFF,  # btn_text
-        0x0000,  # accent1
+        0x6B4D,  # accent1
         0xFFFF,  # accent2
         0xFFFF,  # border
-        0xFFFF   # highlight
+        0xFFFF,  # highlight
     ),
 ]
 
 
 def th():
-    n, tbg, tfg, sbg, bbg, bbdr, btnbg, btnfg, acc = THEMES[theme_index]
-    return {"name": n, "title_bg": tbg, "title_fg": tfg, "screen_bg": sbg,
-            "box_bg": bbg, "box_border": bbdr, "btn_bg": btnbg, "btn_fg": btnfg, "accent": acc}
+    n, bg, text, btn, btn_text, accent1, accent2, border, highlight = THEMES[theme_index]
+    return {"name": n, "title_bg": bg, "title_fg": text, "screen_bg": bg,
+            "box_bg": bg, "box_border": border, "btn_bg": btn, "btn_fg": btn_text,
+            "accent": accent1, "accent2": accent2, "highlight": highlight}
 
 # ---------------------------------------------------------------------------
 # Low-level drawing helpers
@@ -150,9 +147,9 @@ def draw_mic_badge(force=False):
     t = th()
     bx, by, bw, bh = 160, 10, 90, 28
     if state:
-        bg, fg, label = hw.GREEN, hw.BLACK, "QUIET OK"
+        bg, fg, label = t["accent"], hw.BLACK, "QUIET OK"
     else:
-        bg, fg, label = hw.MAG,   hw.WHITE, "LOUD"
+        bg, fg, label = t["accent2"], hw.WHITE, "LOUD"
     hw.lcd.fill_rect(bx, by, bw, bh, bg)
     draw_border(bx, by, bw, bh, t["box_border"])
     tw = len(label) * 8
@@ -252,7 +249,7 @@ def draw_text_box(text, x, y, w, h, prefer_scale=2):
             for line in lines:
                 if shown >= max_lines:
                     break
-                fg = hw.WHITE if t["box_bg"] == hw.BLACK else hw.BLACK
+                fg = t["title_fg"]
                 hw.lcd.text(line, x + 8, ty, fg, t["box_bg"], scale=scale)
                 ty    += line_h
                 shown += 1

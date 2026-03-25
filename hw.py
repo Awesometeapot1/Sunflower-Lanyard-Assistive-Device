@@ -14,13 +14,13 @@ BLACK = 0x0000
 WHITE = 0xFFFF
 GREY  = 0x7BEF
 DARK  = 0x39E7
-YELL  = 0xFFE0
-RED   = 0xF800
+YELL  = 0x07FF   # pre-swapped for BGR panel
+RED   = 0x001F   # pre-swapped for BGR panel
 GREEN = 0x07E0
-BLUE  = 0x001F
-CYAN  = 0x07FF
+BLUE  = 0xF800   # pre-swapped for BGR panel
+CYAN  = 0xFFE0   # pre-swapped for BGR panel
 MAG   = 0xF81F
-ORNG  = 0xFD20
+ORNG  = 0x053F   # pre-swapped for BGR panel
 
 # --- Display dimensions ---
 W = CAL.get("W", 480)
@@ -38,7 +38,7 @@ spi = SPI(_SPI_ID, baudrate=2_000_000, polarity=0, phase=0,
           sck=Pin(_SCK), mosi=Pin(_MOSI), miso=Pin(_MISO))
 
 lcd = ILI9486(spi, cs=_LCD_CS, dc=_LCD_DC, rst=_LCD_RST,
-              width=W, height=H, madctl=0x48, bgr=True,
+              width=W, height=H, madctl=0xE0, bgr=True,
               x_offset=0, y_offset=0)
 
 tp = XPT2046(spi, cs_pin=_TP_CS, irq_pin=_TP_IRQ)

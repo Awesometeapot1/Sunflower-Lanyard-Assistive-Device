@@ -128,7 +128,7 @@ while True:
     poll_battery()
 
     screens.sync_breather_with_lanyard()
-    if breather is not None and screens.current_screen == screens.SCREEN_GROUND:
+    if breather is not None and screens.current_screen in (screens.SCREEN_GROUND, screens.SCREEN_GROUND_DETAIL):
         breather.tick()
 
     if time.ticks_diff(now, _last_touch_poll) >= TOUCH_POLL_MS:

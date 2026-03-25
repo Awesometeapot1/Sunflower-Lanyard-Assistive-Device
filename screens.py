@@ -30,7 +30,8 @@ SCREEN_TIMETABLE = "timetable"
 SCREEN_CONTACTS  = "contacts"
 SCREEN_SETTINGS  = "settings"
 SCREEN_COMM_MENU = "comm_menu"
-SCREEN_COMM_CARD = "comm_card"
+SCREEN_COMM_CARD     = "comm_card"
+SCREEN_GROUND_DETAIL = "grounding_detail"
 
 current_screen = SCREEN_DASHBOARD
 
@@ -107,43 +108,77 @@ GROUNDING_PAGES = [
     "colours, sounds, smells,\n"
     "textures. Stay 1 minute.",
 ]
-page_index = 0
 
-btn_ground_prev = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "PREV", lambda: None)
-btn_ground_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "MENU", lambda: None)
-btn_ground_next = Button(NAV_X0 + 2*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "NEXT", lambda: None)
+GROUNDING_SHORT_NAMES = ["5-4-3-2-1", "BOX BREATH", "BODY SCAN", "MUSCLES", "SAFE PLACE"]
 
-def draw_grounding():
+page_index       = 0
+ground_grid_btns = []
+
+btn_ground_back = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "BACK", lambda: None)
+btn_ground_home = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "HOME", lambda: None)
+
+def draw_grounding_grid():
+    global ground_grid_btns
     t = th()
     lcd.fill(t["screen_bg"])
     draw_title_bar("GROUNDING")
-    draw_indicator("{}/{}".format(page_index + 1, len(GROUNDING_PAGES)))
+    ground_grid_btns = []
+
+    gx, gy    = 16, 56
+    gw        = W - 32
+    gh        = NAV_Y - gy - 8
+    cols      = 2
+    n         = len(GROUNDING_PAGES)
+    rows      = (n + cols - 1) // cols
+    gapx, gapy = 12, 10
+    bw = (gw - gapx) // cols
+    bh = (gh - (rows - 1) * gapy) // rows
+
+    for i, name in enumerate(GROUNDING_SHORT_NAMES):
+        c = i % cols
+        r = i // cols
+        if i == n - 1 and n % cols == 1:
+            x   = gx
+            bwi = gw
+        else:
+            x   = gx + c * (bw + gapx)
+            bwi = bw
+        y = gy + r * (bh + gapy)
+        def _open(idx=i):
+            return lambda: open_grounding_page(idx)
+        b = make_btn(x, y, bwi, bh, name, _open())
+        ground_grid_btns.append(b)
+        draw_button(b)
+
+    draw_button(btn_ground_home)
+
+def draw_grounding_detail():
+    t = th()
+    lcd.fill(t["screen_bg"])
+    draw_title_bar(GROUNDING_SHORT_NAMES[page_index])
     draw_text_box(GROUNDING_PAGES[page_index],
-                  16, 60, W - 32, H - 60 - (NAV_H + 30), prefer_scale=2)
-    draw_button(btn_ground_prev)
-    draw_button(btn_ground_menu)
-    draw_button(btn_ground_next)
+                  16, 56, W - 32, NAV_Y - 56 - 8, prefer_scale=2)
+    draw_button(btn_ground_back)
+    draw_button(btn_ground_home)
 
 def show_grounding():
     global current_screen
     current_screen = SCREEN_GROUND
     set_breathing_active(True)
-    draw_grounding()
+    draw_grounding_grid()
 
-def grounding_prev():
-    global page_index
-    if page_index > 0:
-        page_index -= 1
-        draw_grounding()
+def open_grounding_page(idx):
+    global page_index, current_screen
+    page_index     = idx
+    current_screen = SCREEN_GROUND_DETAIL
+    draw_grounding_detail()
 
-def grounding_next():
-    global page_index
-    if page_index < len(GROUNDING_PAGES) - 1:
-        page_index += 1
-        draw_grounding()
+def grounding_back():
+    global current_screen
+    current_screen = SCREEN_GROUND
+    draw_grounding_grid()
 
-btn_ground_prev.on_press = grounding_prev
-btn_ground_next.on_press = grounding_next
+btn_ground_back.on_press = grounding_back
 
 # ---------------------------------------------------------------------------
 # Timetable screen
@@ -294,13 +329,13 @@ neo_preset_index  = -1
 _last_quiet_for_color = None
 
 NEO_PRESETS = [
-    ("OCEAN",  0x041F, (  0, 100, 255), (100,   0, 255)),
+    ("OCEAN",  0xFC00, (  0, 100, 255), (100,   0, 255)),
     ("FOREST", 0x07C0, (  0, 200,  60), (200, 100,   0)),
-    ("SUNSET", 0xFD20, (255, 100,   0), (255,   0,  80)),
+    ("SUNSET", 0x053F, (255, 100,   0), (255,   0,  80)),
     ("GALAXY", 0x780F, (100,   0, 200), (  0, 200, 200)),
-    ("ROSE",   0xF813, (255,   0, 120), (100,   0, 200)),
-    ("ARCTIC", 0x07FF, (  0, 220, 200), (  0, 100, 255)),
-    ("FIRE",   0xF800, (255,  30,   0), (255, 180,   0)),
+    ("ROSE",   0x981F, (255,   0, 120), (100,   0, 200)),
+    ("ARCTIC", 0xFFE0, (  0, 220, 200), (  0, 100, 255)),
+    ("FIRE",   0x001F, (255,  30,   0), (255, 180,   0)),
     ("CALM",   0xC618, (160, 160, 160), (  0, 100, 255)),
 ]
 
@@ -315,6 +350,7 @@ def _do_calibrate():
 
 def apply_theme(idx):
     draw.theme_index = idx
+    save_config_partial(theme_index=idx)
     show_settings()
 
 def set_settings_page(page):
@@ -353,8 +389,8 @@ def _redraw_sensor_content():
         bx = 22 + i * (nb_w + nb_gap)
         lcd.fill_rect(bx, nb_y, nb_w, nb_h, col565)
         if i == neo_preset_index:
-            draw_border(bx,   nb_y,   nb_w,   nb_h,   WHITE)
-            draw_border(bx+1, nb_y+1, nb_w-2, nb_h-2, WHITE)
+            draw_border(bx,   nb_y,   nb_w,   nb_h,   t["highlight"])
+            draw_border(bx+1, nb_y+1, nb_w-2, nb_h-2, t["highlight"])
         else:
             draw_border(bx, nb_y, nb_w, nb_h, t["box_border"])
         def _neo_fn(idx=i):
@@ -378,7 +414,7 @@ def _refresh_sensor_text():
     lcd.fill_rect(88, 165, W - 100, 45, t["screen_bg"])
     lcd.text("Threshold: {:.3f}".format(mic_thresh_live),
              88, 170, t["box_border"], t["screen_bg"], scale=1)
-    rms_color = GREEN if draw.mic_quiet else RED
+    rms_color = t["accent"] if draw.mic_quiet else t["accent2"]
     lcd.text("Current RMS: {:.3f}".format(draw.mic_rms),
              88, 185, rms_color, t["screen_bg"], scale=1)
     lcd.text("QUIET" if draw.mic_quiet else "LOUD",
@@ -393,9 +429,9 @@ def show_settings():
     draw_title_bar("SETTINGS")
 
     t0_bg = t["accent"] if settings_page == 0 else t["btn_bg"]
-    t0_fg = BLACK       if settings_page == 0 else t["btn_fg"]
+    t0_fg = t["title_fg"] if settings_page == 0 else t["btn_fg"]
     t1_bg = t["accent"] if settings_page == 1 else t["btn_bg"]
-    t1_fg = BLACK       if settings_page == 1 else t["btn_fg"]
+    t1_fg = t["title_fg"] if settings_page == 1 else t["btn_fg"]
     btn_settings_tab0 = make_btn(20,  60, 210, 30, "THEMES",
                                  lambda: set_settings_page(0), bg=t0_bg, fg=t0_fg)
     btn_settings_tab1 = make_btn(250, 60, 210, 30, "SENSOR & NEO",
@@ -446,137 +482,113 @@ COMM_CATEGORIES = [
     ("STATUS",     CAT_STATUS,    GREY,  WHITE),
 ]
 
-comm_menu_buttons = []
-comm_cards     = FAV_CARDS
-comm_cat_name  = "FAVOURITES"
-comm_card_index = 0
+_COMM_TAB_SHORT = ["FAVS", "NEEDS", "SENSORY", "RESP", "FEELING", "STATUS"]
+_COMM_COLS      = 2
+_COMM_ROWS      = 2
+_COMM_PER_PAGE  = _COMM_COLS * _COMM_ROWS
 
-btn_commmenu_menu = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "MENU", lambda: None)
+comm_cat_index = 0
+comm_grid_page = 0
+comm_tab_btns  = []
+comm_grid_btns = []
 
-def open_category(idx):
-    global comm_cards, comm_cat_name, comm_card_index
-    comm_cat_name, comm_cards, _, _ = COMM_CATEGORIES[idx]
-    comm_card_index = 0
-    show_comm_card()
+btn_comm_prev = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "PREV", lambda: None)
+btn_comm_home = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "HOME", lambda: None)
+btn_comm_next = Button(NAV_X0 + 2*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "NEXT", lambda: None)
 
-def build_comm_menu_buttons():
-    global comm_menu_buttons
-    comm_menu_buttons = []
-    cols  = 2
-    rows  = (len(COMM_CATEGORIES) + 1) // 2
-    grid_x, grid_y = 20, 70
-    grid_w = W - 40
-    grid_h = H - 70 - (NAV_H + 30)
-    gapx, gapy = 12, 12
-    bw = (grid_w - gapx) // 2
-    bh = (grid_h - (rows - 1) * gapy) // rows
-    for i, (name, cards, bg, fg) in enumerate(COMM_CATEGORIES):
-        c = i % cols
-        r = i // cols
-        x = grid_x + c * (bw + gapx)
-        y = grid_y + r * (bh + gapy)
-        def make_open(idx=i):
-            return lambda: open_category(idx)
-        comm_menu_buttons.append(make_btn(x, y, bw, bh, name, make_open(), bg=bg, fg=fg))
+def _comm_current_cards():
+    return COMM_CATEGORIES[comm_cat_index][1]
 
-def show_comm_menu():
-    global current_screen
-    current_screen = SCREEN_COMM_MENU
-    set_breathing_active(False)
-    lcd.fill(th()["screen_bg"])
-    draw_title_bar("COMM CARDS")
-    build_comm_menu_buttons()
-    for b in comm_menu_buttons:
-        draw_button(b)
-    draw_button(btn_commmenu_menu)
+def switch_comm_cat(idx):
+    global comm_cat_index, comm_grid_page
+    comm_cat_index = idx
+    comm_grid_page = 0
+    draw_comm()
 
-ACT_H  = 44
-ACT_Y  = 48 + 8
-ACT_X0 = 20
-ACT_GAP = 12
-ACT_W  = (W - 40 - ACT_GAP) // 2
+def comm_page_prev():
+    global comm_grid_page
+    if comm_grid_page > 0:
+        comm_grid_page -= 1
+        draw_comm()
 
-btn_comm_prev  = Button(NAV_X0 + 0*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "PREV", lambda: None)
-btn_comm_cats  = Button(NAV_X0 + 1*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "CATS", lambda: None)
-btn_comm_next  = Button(NAV_X0 + 2*(NAV_W+NAV_GAP), NAV_Y, NAV_W, NAV_H, "NEXT", lambda: None)
-btn_comm_speak = make_btn(ACT_X0,           ACT_Y, ACT_W, ACT_H, "SPEAK", lambda: None, bg=BLUE, fg=WHITE)
-btn_comm_menu  = make_btn(ACT_X0+ACT_W+ACT_GAP, ACT_Y, ACT_W, ACT_H, "MENU",  lambda: None)
+def comm_page_next():
+    global comm_grid_page
+    if (comm_grid_page + 1) * _COMM_PER_PAGE < len(_comm_current_cards()):
+        comm_grid_page += 1
+        draw_comm()
 
-def draw_comm_card():
+def draw_comm():
+    global comm_tab_btns, comm_grid_btns
     t = th()
     lcd.fill(t["screen_bg"])
-    draw_title_bar(comm_cat_name)
-    draw_button(btn_comm_speak)
-    draw_button(btn_comm_menu)
+    draw_title_bar("COMM CARDS")
 
-    card_x = 16
-    card_y = ACT_Y + ACT_H + 10
-    card_w = W - 32
-    card_h = H - card_y - (NAV_H + 30)
+    # --- Category tabs ---
+    comm_tab_btns = []
+    tab_y, tab_h  = 52, 38
+    tab_gap       = 6
+    n_cats        = len(COMM_CATEGORIES)
+    tab_w         = (W - 32 - (n_cats - 1) * tab_gap) // n_cats
+    for i, (name, cards, bg, fg) in enumerate(COMM_CATEGORIES):
+        x     = 16 + i * (tab_w + tab_gap)
+        short = _COMM_TAB_SHORT[i]
+        lcd.fill_rect(x, tab_y, tab_w, tab_h, bg)
+        if i == comm_cat_index:
+            draw_border(x,   tab_y,   tab_w,   tab_h,   WHITE)
+            draw_border(x+1, tab_y+1, tab_w-2, tab_h-2, WHITE)
+        else:
+            draw_border(x, tab_y, tab_w, tab_h, t["box_border"])
+        tw = len(short) * 8
+        lcd.text(short, x + (tab_w - tw) // 2, tab_y + (tab_h - 8) // 2, fg, bg, scale=1)
+        def _switch(idx=i):
+            return lambda: switch_comm_cat(idx)
+        comm_tab_btns.append(Button(x, tab_y, tab_w, tab_h, short, _switch()))
 
-    icon, phrase, bg, fg = comm_cards[comm_card_index]
-    lcd.fill_rect(card_x, card_y, card_w, card_h, bg)
-    draw_border(card_x, card_y, card_w, card_h, t["box_border"])
-    draw_indicator("{}/{}".format(comm_card_index + 1, len(comm_cards)))
+    # --- Card grid ---
+    comm_grid_btns = []
+    cards          = _comm_current_cards()
+    gx, gy         = 16, 96
+    gw             = W - 32
+    gh             = NAV_Y - gy - 8
+    gapx, gapy     = 12, 8
+    cw = (gw - (_COMM_COLS - 1) * gapx) // _COMM_COLS
+    ch = (gh - (_COMM_ROWS - 1) * gapy) // _COMM_ROWS
 
-    icon_scale = 4
-    ix = card_x + (card_w - len(icon) * 8 * icon_scale) // 2
-    iy = card_y + 18
-    lcd.text(icon, ix, iy, fg, bg, scale=icon_scale)
-
-    scale = 3
-    max_chars = (card_w - 20) // (8 * scale)
-    if max_chars < 6:
-        scale = 2
-        max_chars = (card_w - 20) // (8 * scale)
-    if max_chars < 6:
-        scale = 1
-        max_chars = (card_w - 20) // (8 * scale)
-
-    lines   = wrap_text(phrase, max_chars)
-    line_h  = 8 * scale + 6
-    total_h = len(lines) * line_h
-    start_y = iy + 8 * icon_scale + 18
-    rem_h   = (card_y + card_h) - start_y - 12
-    y       = start_y + (rem_h - total_h) // 2
-    for line in lines:
-        x = card_x + (card_w - len(line) * 8 * scale) // 2
-        lcd.text(line, x, y, fg, bg, scale=scale)
-        y += line_h
+    start   = comm_grid_page * _COMM_PER_PAGE
+    visible = cards[start:start + _COMM_PER_PAGE]
+    for i, (icon, phrase, bg, fg) in enumerate(visible):
+        col = i % _COMM_COLS
+        row = i // _COMM_COLS
+        x   = gx + col * (cw + gapx)
+        y   = gy + row * (ch + gapy)
+        lcd.fill_rect(x, y, cw, ch, bg)
+        draw_border(x, y, cw, ch, t["box_border"])
+        tw = len(phrase) * 8
+        tx = x + max(4, (cw - tw) // 2)
+        ty = y + (ch - 8) // 2
+        lcd.text(phrase, tx, ty, fg, bg, scale=1)
+        def _speak_fn(p=phrase):
+            return lambda: speak(p)
+        comm_grid_btns.append(Button(x, y, cw, ch, phrase, _speak_fn()))
 
     draw_button(btn_comm_prev)
-    draw_button(btn_comm_cats)
+    draw_button(btn_comm_home)
     draw_button(btn_comm_next)
 
-def show_comm_card():
+def show_comm():
     global current_screen
     current_screen = SCREEN_COMM_CARD
     set_breathing_active(False)
-    draw_comm_card()
+    draw_comm()
 
-def comm_prev():
-    global comm_card_index
-    if comm_card_index > 0:
-        comm_card_index -= 1
-        draw_comm_card()
-
-def comm_next():
-    global comm_card_index
-    if comm_card_index < len(comm_cards) - 1:
-        comm_card_index += 1
-        draw_comm_card()
-
-btn_comm_prev.on_press  = comm_prev
-btn_comm_next.on_press  = comm_next
-btn_comm_cats.on_press  = show_comm_menu
-btn_comm_speak.on_press = lambda: speak(comm_cards[comm_card_index][1])
+def show_comm_menu():
+    show_comm()
 
 def do_sos():
-    global comm_cards, comm_cat_name, comm_card_index
-    comm_cat_name  = "NEEDS"
-    comm_cards     = CAT_NEEDS
-    comm_card_index = 0
-    show_comm_card()
+    global comm_cat_index, comm_grid_page
+    comm_cat_index = 1  # NEEDS
+    comm_grid_page = 0
+    show_comm()
 
 # ---------------------------------------------------------------------------
 # Dashboard pixel-art icons (bx, by, bh, fg, bg)
@@ -705,20 +717,21 @@ def show_dashboard():
 # ---------------------------------------------------------------------------
 # Wire return-to-home buttons
 # ---------------------------------------------------------------------------
-btn_ground_menu.on_press   = show_dashboard
+btn_ground_home.on_press   = show_dashboard
 btn_tt_menu.on_press       = show_dashboard
 btn_contacts_menu.on_press = show_dashboard
 btn_settings_menu.on_press = show_dashboard
-btn_commmenu_menu.on_press = show_dashboard
-btn_comm_menu.on_press     = show_dashboard
+btn_comm_home.on_press     = show_dashboard
 btn_settings_cal.on_press  = _do_calibrate
+btn_comm_prev.on_press     = comm_page_prev
+btn_comm_next.on_press     = comm_page_next
 
 # ---------------------------------------------------------------------------
 # Breather colour sync
 # ---------------------------------------------------------------------------
 def sync_breather_with_lanyard():
     global _last_quiet_for_color
-    if breather is None or current_screen != SCREEN_GROUND or hw.mic is None:
+    if breather is None or current_screen not in (SCREEN_GROUND, SCREEN_GROUND_DETAIL) or hw.mic is None:
         return
     if _last_quiet_for_color is None or draw.mic_quiet != _last_quiet_for_color:
         _last_quiet_for_color = draw.mic_quiet
@@ -731,7 +744,9 @@ def screen_buttons():
     if current_screen == SCREEN_DASHBOARD:
         return dashboard_buttons
     if current_screen == SCREEN_GROUND:
-        return [btn_ground_prev, btn_ground_menu, btn_ground_next]
+        return ground_grid_btns + [btn_ground_home]
+    if current_screen == SCREEN_GROUND_DETAIL:
+        return [btn_ground_back, btn_ground_home]
     if current_screen == SCREEN_TIMETABLE:
         return [btn_tt_mon, btn_tt_tue, btn_tt_wed, btn_tt_thu, btn_tt_fri,
                 btn_tt_prev, btn_tt_menu, btn_tt_next]
@@ -739,8 +754,6 @@ def screen_buttons():
         return [btn_contacts_menu]
     if current_screen == SCREEN_SETTINGS:
         return settings_buttons + [btn_settings_menu, btn_settings_cal]
-    if current_screen == SCREEN_COMM_MENU:
-        return comm_menu_buttons + [btn_commmenu_menu]
     if current_screen == SCREEN_COMM_CARD:
-        return [btn_comm_speak, btn_comm_menu, btn_comm_prev, btn_comm_cats, btn_comm_next]
+        return comm_tab_btns + comm_grid_btns + [btn_comm_prev, btn_comm_home, btn_comm_next]
     return []

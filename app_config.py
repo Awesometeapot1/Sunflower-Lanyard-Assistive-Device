@@ -8,10 +8,10 @@ import json
 # Colour map: name string -> RGB565 value
 # -----------------------------------------------------------
 COLOR_MAP = {
-    "RED":   0xF800, "WHITE": 0xFFFF, "BLACK": 0x0000,
-    "GREY":  0x7BEF, "DARK":  0x39E7, "YELL":  0xFFE0,
-    "GREEN": 0x07E0, "BLUE":  0x001F, "CYAN":  0x07FF,
-    "MAG":   0xF81F, "ORNG":  0xFD20,
+    "RED":   0x001F, "WHITE": 0xFFFF, "BLACK": 0x0000,
+    "GREY":  0x7BEF, "DARK":  0x39E7, "YELL":  0x07FF,
+    "GREEN": 0x07E0, "BLUE":  0xF800, "CYAN":  0xFFE0,
+    "MAG":   0xF81F, "ORNG":  0x053F,
 }
 
 def _col(name):
@@ -116,6 +116,7 @@ _DEFAULTS = {
         ]
     },
     "battery_poll_ms": 3000,
+    "theme_index": 0,
 }
 
 # -----------------------------------------------------------
@@ -154,3 +155,4 @@ NEO_QUIET_COLOR  = (int(_nq[0]), int(_nq[1]), int(_nq[2]))
 NEO_ACTIVE_COLOR = (int(_na[0]), int(_na[1]), int(_na[2]))
 
 BATTERY_POLL_MS  = int(_cfg.get("battery_poll_ms", _DEFAULTS["battery_poll_ms"]))
+THEME_INDEX      = int(_cfg.get("theme_index",     _DEFAULTS["theme_index"]))
