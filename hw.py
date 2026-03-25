@@ -3,7 +3,7 @@
 # All objects are created once here; other modules import them directly.
 
 from machine import Pin, SPI
-from ili9486 import ILI9486
+from st7796s import ST7796S as ILI9486
 from xpt2046 import XPT2046
 from touch_cal import CAL
 from ui import Battery
