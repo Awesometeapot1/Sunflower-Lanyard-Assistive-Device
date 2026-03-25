@@ -58,6 +58,9 @@ _MIC_SAMPLE_COUNT = 120
 _MIC_SAMPLE_US    = 80
 _MIC_EMA_ALPHA    = 0.15
 
+# --- Grounding shortcut button (GP4, active low) ---
+ground_btn = Pin(4, Pin.IN, Pin.PULL_UP)
+
 try:
     from mic_level import MicLevel
     mic = MicLevel(

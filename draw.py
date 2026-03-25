@@ -25,22 +25,102 @@ _last_battery_draw = 0
 # Tuple layout: (name, title_bg, title_fg, screen_bg, box_bg, box_border, btn_bg, btn_fg, accent)
 THEMES = [
     # High-contrast modern dark
-    ("NEON_DARK",  0x0000, 0x07FF, 0x0000, 0x0000, 0x07FF, 0x07E0, 0x0000, 0xF81F),
-    # Soft warm light — warm brown title, peach-cream buttons (visible on white)
-    ("CREAM",      0xB40A, 0xFFFF, 0xFFFF, 0xFFFF, 0x8410, 0xF695, 0x0000, 0x07E0),
+    ("NEON_DARK",  
+        0x0000,  # bg
+        0x07FF,  # text
+        0x0000,  # btn
+        0x07FF,  # btn_text
+        0x07E0,  # accent1
+        0xF81F,  # accent2
+        0x07FF,  # border
+        0xF81F   # highlight
+    ),
+
+    # Warm light — soft peach buttons
+    ("CREAM",
+        0xFFDD,  # bg
+        0x0000,  # text
+        0xFEA0,  # btn
+        0x0000,  # btn_text
+        0xF695,  # accent1
+        0x8410,  # accent2
+        0x0000,  # border
+        0xFEC0   # highlight
+    ),
+
     # Cool icy blue
-    ("GLACIER",    0x07FF, 0x0000, 0xCFFF, 0xCFFF, 0x001F, 0x07FF, 0x0000, 0x001F),
+    ("GLACIER",
+        0xCFFF,  # bg
+        0x001F,  # text
+        0xAFFF,  # btn
+        0x001F,  # btn_text
+        0x07FF,  # accent1
+        0x0010,  # accent2
+        0x07FF,  # border
+        0xDFFF   # highlight
+    ),
+
     # Gentle dark — deep navy, soft blue text, good for night/low light
-    ("NIGHT",      0x10E7, 0xB65C, 0x10E7, 0x216A, 0x53D6, 0x3230, 0xB65C, 0x05B9),
-    # Sunset — golden buttons visible against orange screen
-    ("SUNSET",     0x8A22, 0xFFFF, 0xFD20, 0xFD20, 0xF800, 0xFE4A, 0x0000, 0xF81F),
+    ("NIGHT",
+        0x0842,  # bg
+        0x7BDE,  # text
+        0x10A2,  # btn
+        0x5B5F,  # btn_text
+        0x3230,  # accent1
+        0x4A7F,  # accent2
+        0x7BDE,  # border
+        0x1CF7   # highlight
+    ),
+
+    # Warm orange and magenta
+    ("SUNSET",
+        0xFC00,  # bg
+        0xFFFF,  # text
+        0xFD20,  # btn
+        0x0000,  # btn_text
+        0xF81F,  # accent1
+        0xFE4A,  # accent2
+        0x0000,  # border
+        0xF81F   # highlight
+    ),
+
     # Steel grey
-    ("STEEL",      0x4208, 0xFFFF, 0x8410, 0x8410, 0xFFFF, 0x4208, 0xFFFF, 0x07FF),
-    # Calming lavender — actual soft purple (was neon magenta)
-    ("LAVENDER",   0x5192, 0xFFFF, 0xEF1F, 0xEF1F, 0x5192, 0xB51A, 0x0000, 0x7A99),
-    # High-contrast monochrome
-    ("MONO",       0xFFFF, 0x0000, 0x8410, 0x8410, 0xFFFF, 0x0000, 0xFFFF, 0xFFFF),
+    ("STEEL",
+        0x4208,  # bg
+        0xFFFF,  # text
+        0x8410,  # btn
+        0xFFFF,  # btn_text
+        0xC618,  # accent1
+        0x4208,  # accent2
+        0xFFFF,  # border
+        0x7BEF   # highlight
+    ),
+
+    # Soft purple — calming pastel
+    ("LAVENDER",
+        0xD69F,  # bg
+        0x0000,  # text
+        0xE77F,  # btn
+        0x0000,  # btn_text
+        0xC65F,  # accent1
+        0xAD55,  # accent2
+        0x0000,  # border
+        0xEF9F   # highlight
+    ),
+
+    # High-contrast black and white
+    ("MONO",
+        0x0000,  # bg
+        0xFFFF,  # text
+        0x0000,  # btn
+        0xFFFF,  # btn_text
+        0x0000,  # accent1
+        0xFFFF,  # accent2
+        0xFFFF,  # border
+        0xFFFF   # highlight
+    ),
 ]
+
 
 def th():
     n, tbg, tfg, sbg, bbg, bbdr, btnbg, btnfg, acc = THEMES[theme_index]

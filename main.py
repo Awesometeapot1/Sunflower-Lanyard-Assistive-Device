@@ -119,6 +119,7 @@ TOUCH_POLL_MS  = 25
 _last_touch_poll = 0
 was_down  = False
 last_tap_ms = 0
+_ground_was_down = False
 
 while True:
     now = time.ticks_ms()
@@ -157,5 +158,11 @@ while True:
                         break
 
         was_down = down
+
+    # Physical grounding shortcut button on GP4 (active low)
+    ground_now = not hw.ground_btn.value()
+    if ground_now and not _ground_was_down:
+        screens.show_grounding()
+    _ground_was_down = ground_now
 
     time.sleep_ms(8)
